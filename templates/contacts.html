@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}Contacts &amp; CSV{% endblock %}
+{% block heading %}Contacts &amp; CSV{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-head"><div class="card-title">Upload a contact list</div></div>
+  <div class="card-body">
+    {% if campaigns %}
+    <div class="grid c2">
+      <div><label>Add to campaign</label>
+        <select id="u-campaign">
+          {% for c in campaigns %}
+          <option value="{{ c.id }}">{{ c.name }} ({{ c.status }})</option>
+          {% endfor %}
+        </select></div>
+      <div><label>CSV file</label>
+        <input type="file" id="u-file" accept=".csv,.txt" onchange="previewCsv(this)"/></div>
+    </div>
+    <div id="csv-status" class="note ok"></div>
+
+    <label style="margin-top:16px">…or paste numbers directly</label>
+    <textarea id="u-numbers" placeholder="+919876543210, Ramesh, Blue Shirt&#10;+919876543211, Priya, Red Kurta"></textarea>
+    <div class="note">
+      Needs a <b>phone</b> column. Every other column (name, product, amount) becomes a
+      <span class="mono">{placeholder}</span> you can use in the agent's script.
+      Duplicates within a campaign are skipped automatically.
+    </div>
+
+    <button class="btn btn-primary" style="margin-top:18px" onclick="uploadContacts(this)">
+      Import contacts</button>
+    {% else %}
+    <div class="empty">
+      Create a campaign first — contacts are queued against a campaign.<br/>
+      <a href="/campaigns" class="btn btn-primary btn-sm" style="margin-top:14px">Go to Campaigns</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <div class="card-title">Ready-made CSV templates</div>
+    <span class="mono">{{ templates_list|length }} industries</span>
+  </div>
+  <div class="card-body">
+    <p class="note" style="margin:0 0 14px">
+      Download a template, fill in your customers, and upload it above.
+      Each one already has the right columns for that use case.
+    </p>
+    <div class="grid c3">
+      {% for t in templates_list %}
+      <a href="/templates/{{ t.filename }}" download
+         style="background:var(--surface-2);border:1px solid var(--border);border-radius:9px;
+                padding:12px 14px;font-size:13px;display:flex;justify-content:space-between;gap:10px">
+        <span>{{ t.name }}</span>
+        <span style="color:var(--primary)">↓</span>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <div class="card-title">Contacts</div>
+    <input style="width:230px;padding:7px 12px;font-size:13px"
+           placeholder="Search name or number…" oninput="filterTable('contacts-table', this.value)"/>
+  </div>
+  {% if contacts %}
+  <div class="table-scroll">
+  <table id="contacts-table">
+    <thead><tr><th>Name</th><th>Phone</th><th>Extra fields</th><th>Status</th><th>Retries</th><th></th></tr></thead>
+    <tbody>
+      {% for c in contacts %}
+      <tr id="contact-{{ c.id }}">
+        <td>{{ c.name or '—' }}</td>
+        <td class="mono">{{ c.phone }}</td>
+        <td class="mono" style="max-width:260px;overflow:hidden;text-overflow:ellipsis">
+          {{ c.extra_json if c.extra_json != '{}' else '—' }}</td>
+        <td>
+          {% set cls = {'completed':'t-good','failed':'t-bad','dnc':'t-bad','dialed':'t-mid'}.get(c.status,'t-idle') %}
+          <span class="tag {{ cls }}">{{ c.status }}</span>
+          {% if c.last_error %}<div class="note" style="max-width:200px">{{ c.last_error }}</div>{% endif %}
+        </td>
+        <td class="mono">{{ c.retry_count }}</td>
+        <td style="text-align:right">
+          <button class="btn btn-danger btn-sm" onclick="removeContact({{ c.id }})">Remove</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <div class="note" style="padding:10px 20px">Showing up to 500 most recent.</div>
+  {% else %}
+  <div class="empty">No contacts imported yet.</div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function previewCsv(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const lines = e.target.result.split(/\r?\n/).filter(l => l.trim());
+    const hasHeader = /phone|number|mobile|name/i.test(lines[0] || "");
+    document.getElementById("csv-status").textContent =
+      `✓ ${lines.length - (hasHeader ? 1 : 0)} contact(s) found in ${file.name}`;
+  };
+  reader.readAsText(file);
+}
+
+async function uploadContacts(btn) {
+  const fileInput = document.getElementById("u-file");
+  const numbers = document.getElementById("u-numbers").value.trim();
+  if (!fileInput.files[0] && !numbers) {
+    toast("Choose a CSV file or paste some numbers.", "bad");
+    return;
+  }
+
+  await action(btn, "Importing…", async () => {
+    const fd = new FormData();
+    fd.append("campaign_id", document.getElementById("u-campaign").value);
+    fd.append("numbers", numbers);
+    if (fileInput.files[0]) fd.append("file", fileInput.files[0]);
+
+    const d = await post("/api/contacts/upload", fd);
+    if (d.ok) { toast(d.detail, "good"); setTimeout(() => location.reload(), 1000); }
+    else toast(d.detail, "bad");
+  });
+}
+
+async function removeContact(id) {
+  const d = await post(`/api/contacts/${id}/delete`);
+  if (d.ok) document.getElementById("contact-" + id)?.remove();
+  else toast(d.detail, "bad");
+}
+</script>
+{% endblock %}

@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>{% block title %}SancharAI{% endblock %} — SancharAI</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link rel="stylesheet" href="/static/app.css"/>
+</head>
+<body>
+<div class="auth-wrap">
+  <div style="width:100%;max-width:420px">
+    <a href="/" class="brand" style="border:none;justify-content:center;padding:0 0 22px">
+      <div class="brand-mark">◉</div>Sanchar<span class="accent">AI</span>
+    </a>
+    <div class="auth-card">
+      {% block content %}{% endblock %}
+    </div>
+    {% block foot %}{% endblock %}
+  </div>
+</div>
+</body>
+</html>

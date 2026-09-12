@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="csrf" content="{{ csrf }}"/>
+<title>{% block title %}SancharAI{% endblock %} — {{ company.name }}</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link rel="stylesheet" href="/static/app.css"/>
+</head>
+<body>
+<div id="toast"></div>
+<div class="shell">
+
+  {# ---- sidebar: same information architecture as v2's DashboardLayout ---- #}
+  <aside class="sidebar">
+    <a href="/" class="brand">
+      <div class="brand-mark">◉</div>Sanchar<span class="accent">AI</span>
+    </a>
+    <nav class="nav">
+      <div class="nav-label">Overview</div>
+      <a href="/" class="nav-item {{ 'active' if page == 'overview' }}">Dashboard</a>
+      <a href="/history" class="nav-item {{ 'active' if page == 'history' }}">
+        Call History<span class="count">{{ counts.calls }}</span></a>
+
+      <div class="nav-label">Calling</div>
+      <a href="/agents" class="nav-item {{ 'active' if page == 'agents' }}">
+        AI Agents<span class="count">{{ counts.agents }}</span></a>
+      <a href="/campaigns" class="nav-item {{ 'active' if page == 'campaigns' }}">
+        Campaigns<span class="count">{{ counts.campaigns }}</span></a>
+      <a href="/contacts" class="nav-item {{ 'active' if page == 'contacts' }}">
+        Contacts &amp; CSV<span class="count">{{ counts.contacts }}</span></a>
+      <a href="/call" class="nav-item {{ 'active' if page == 'call' }}">Test Call</a>
+      <a href="/appointments" class="nav-item {{ 'active' if page == 'appointments' }}">
+        Appointments</a>
+      <a href="/faqs" class="nav-item {{ 'active' if page == 'faqs' }}">
+        Knowledge Base<span class="count">{{ counts.faqs }}</span></a>
+
+      <div class="nav-label">Account</div>
+      <a href="/billing" class="nav-item {{ 'active' if page == 'billing' }}">Billing &amp; Plan</a>
+      <a href="/team" class="nav-item {{ 'active' if page == 'team' }}">Team</a>
+      <a href="/settings" class="nav-item {{ 'active' if page == 'settings' }}">Settings</a>
+      {% if is_admin %}
+      <a href="/admin" class="nav-item {{ 'active' if page == 'admin' }}">Platform Admin</a>
+      {% endif %}
+    </nav>
+
+    <div class="side-foot">
+      <div class="who">{{ user.email }}</div>
+      <div class="plan">{{ usage.plan.name }} · {{ usage.minutes_remaining }} min left</div>
+      {% set pct = usage.usage_pct %}
+      <div class="meter {{ 'full' if pct >= 100 else 'warn' if pct >= 80 else '' }}">
+        <div style="width:{{ pct }}%"></div>
+      </div>
+      <a href="/logout">Sign out</a>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <h1>{% block heading %}Dashboard{% endblock %}</h1>
+      <div class="top-right">
+        <div class="pill">
+          <span class="dot {{ 'on' if twilio_connected else 'off' }}"></span>
+          {{ 'Twilio connected' if twilio_connected else 'Twilio not connected' }}
+        </div>
+        <div class="pill">
+          <span class="dot {{ 'on' if groq_connected else 'off' }}"></span>
+          {{ 'AI ready' if groq_connected else 'No AI key' }}
+        </div>
+      </div>
+    </header>
+
+    <div class="content">
+      {% if not user.is_verified %}
+      <div class="banner amber">
+        <div style="flex:1;min-width:260px">
+          <div style="font-weight:600;font-size:14px;color:var(--amber);margin-bottom:3px">
+            Verify your email to start calling</div>
+          <div style="font-size:13px;color:var(--muted)">
+            We sent a link to <b>{{ user.email }}</b>. You can set everything up now,
+            but calls stay blocked until it's confirmed.</div>
+        </div>
+        <button class="btn btn-ghost" onclick="resendVerification(this)">Resend email</button>
+      </div>
+      {% endif %}
+
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+</div>
+
+<script src="/static/app.js"></script>
+<script>
+async function resendVerification(btn) {
+  await action(btn, "Sending…", async () => {
+    const d = await post("/api/resend-verification");
+    toast(d.detail, d.ok ? "good" : "bad");
+  });
+}
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

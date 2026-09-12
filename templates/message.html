@@ -1,0 +1,11 @@
+{% extends "auth_base.html" %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<h1>{{ title }}</h1>
+<div class="sub" style="margin-bottom:0">{{ body }}</div>
+{% if link %}
+<a href="{{ link }}" class="btn btn-primary" style="display:block;text-align:center;margin-top:24px">
+  {{ link_text or 'Continue' }}</a>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="csrf" content="{{ csrf }}"/>
+<title>Platform Admin — SancharAI</title>
+<link rel="stylesheet" href="/static/app.css"/>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+</head>
+<body>
+<div class="main" style="max-width:1400px;margin:0 auto">
+  <header class="topbar">
+    <h1>Platform Admin</h1>
+    <div class="top-right">
+      <div class="pill"><span class="dot idle"></span>{{ user.email }}</div>
+      <a href="/" class="btn btn-ghost btn-sm">Back to dashboard</a>
+    </div>
+  </header>
+
+  <div class="content">
+    <div class="grid c4">
+      <div class="metric">
+        <div class="metric-label">Workspaces</div>
+        <div class="metric-val">{{ totals.companies }}</div>
+        <div class="metric-sub">{{ totals.enterprise }} business · {{ totals.individual }} individual</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Total calls</div>
+        <div class="metric-val">{{ totals.calls }}</div>
+        <div class="metric-sub">{{ totals.minutes }} minutes</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">MRR</div>
+        <div class="metric-val" style="color:var(--green)">₹{{ "{:,}".format(totals.mrr) }}</div>
+        <div class="metric-sub">sum of active plan prices</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Twilio connected</div>
+        <div class="metric-val" style="color:var(--primary)">
+          {{ rows | selectattr('twilio') | list | length }}</div>
+        <div class="metric-sub">of {{ totals.companies }} workspaces</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">All workspaces</div>
+        <input style="width:250px;padding:7px 12px;font-size:13px"
+               placeholder="Search name or email…" oninput="filterTable('admin-table', this.value)"/>
+      </div>
+      <div class="table-scroll">
+      <table id="admin-table">
+        <thead><tr>
+          <th>#</th><th>Workspace</th><th>Type</th><th>Plan</th><th>Users</th>
+          <th>Campaigns</th><th>Calls</th><th>Minutes</th><th>Twilio</th><th>Created</th>
+        </tr></thead>
+        <tbody>
+          {% for r in rows %}
+          <tr>
+            <td class="mono">{{ r.id }}</td>
+            <td style="font-weight:600">{{ r.name }}</td>
+            <td class="mono">{{ r.type }}</td>
+            <td><span class="tag {{ 't-good' if r.plan != 'free' else 't-idle' }}">{{ r.plan }}</span></td>
+            <td class="mono" style="max-width:240px;overflow:hidden;text-overflow:ellipsis">{{ r.emails }}</td>
+            <td class="mono">{{ r.campaigns }}</td>
+            <td class="mono">{{ r.calls }}</td>
+            <td class="mono">{{ r.minutes }}</td>
+            <td><span class="tag {{ 't-good' if r.twilio else 't-bad' }}">
+              {{ 'yes' if r.twilio else 'no' }}</span></td>
+            <td class="mono">{{ r.created }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="10" class="empty">No workspaces yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% block title %}Test Call{% endblock %}
+{% block heading %}Test Call{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-head"><div class="card-title">Place a single call now</div></div>
+  <div class="card-body">
+    <p class="note" style="margin:0 0 8px">
+      Dials one number immediately, bypassing the campaign queue and its call window.
+      Use it to hear your agent before launching a list.
+    </p>
+
+    <div class="grid c2">
+      <div><label>Phone number</label>
+        <input id="t-phone" placeholder="+919876543210"/></div>
+      <div><label>Which agent should call</label>
+        <select id="t-agent">
+          <option value="0">Default from Settings ({{ settings.agent_name }})</option>
+          {% for a in agents %}
+          <option value="{{ a.id }}">{{ a.name }} — {{ a.speech_language }}</option>
+          {% endfor %}
+        </select>
+        <div class="note">
+          Agents you create on the <a href="/agents" style="color:var(--primary)">AI Agents</a>
+          page. Picking one here uses its greeting, voice and language.
+        </div></div>
+    </div>
+
+    <div class="grid c2">
+      <div><label>Use campaign persona instead (optional)</label>
+        <select id="t-campaign">
+          <option value="0">— none —</option>
+          {% for c in campaigns %}
+          <option value="{{ c.id }}">{{ c.name }}</option>
+          {% endfor %}
+        </select>
+        <div class="note">An agent selected above takes priority over this.</div></div>
+    </div>
+
+    <button class="btn btn-primary" style="margin-top:20px" onclick="placeCall(this)">
+      Call now</button>
+    <div id="call-result" style="margin-top:14px"></div>
+
+    {% if not twilio_connected or not groq_connected %}
+    <div class="note bad" style="margin-top:14px">
+      {% if not twilio_connected %}Twilio is not connected. {% endif %}
+      {% if not groq_connected %}No AI provider configured. {% endif %}
+      Add these in <a href="/settings" style="color:var(--primary)">Settings</a> first.
+    </div>
+    {% endif %}
+
+    {% if not public_reachable %}
+    <div class="banner amber" style="margin-top:16px">
+      <div style="flex:1;min-width:280px">
+        <div style="font-weight:600;font-size:14px;color:var(--amber);margin-bottom:4px">
+          Twilio can't call you back yet</div>
+        <div style="font-size:13px;color:var(--muted)">
+          Your callback address is <span class="mono">{{ public_base }}</span>, which only
+          exists on this machine. The phone will ring, then say
+          <b>“an application error has occurred”</b> — because Twilio can't fetch what
+          the agent should say.
+          <div style="margin-top:10px">Open a tunnel and restart:</div>
+          <div class="codebox" style="margin-top:6px">ngrok http 8010</div>
+          <div style="margin-top:8px">Then put the <b>https</b> URL it prints into
+            <span class="mono">PUBLIC_BASE_URL</span> in your
+            <span class="mono">.env</span> file.</div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><div class="card-title">Hear the voices</div></div>
+  <div class="card-body">
+    <p class="note" style="margin:0 0 8px">
+      There's no way to preview these voices in the browser — Twilio has no standalone
+      text-to-speech, so the voices only exist inside a real call. This rings your phone
+      and plays them, which is the only way to hear what your customers actually hear.
+    </p>
+
+    <div class="grid c2">
+      <div><label>Your phone number</label>
+        <input id="v-phone" placeholder="+919876543210"/></div>
+      <div><label>What to play</label>
+        <select id="v-mode">
+          <option value="all">All 8 voices — pick your favourite</option>
+          <option value="languages">One voice in all 7 languages</option>
+        </select></div>
+    </div>
+
+    <div id="v-which" style="display:none">
+      <label>Which voice</label>
+      <select id="v-voice">
+        {% for n in ['Aoede','Kore','Leda','Zephyr','Charon','Fenrir','Orus','Puck'] %}
+        <option value="{{ n }}" {{ 'selected' if settings.voice == n }}>{{ n }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <button class="btn btn-primary" style="margin-top:20px" onclick="previewVoices(this)">
+      Call me and play the voices</button>
+    <div class="note">
+      One call, roughly 40–60 seconds, billed to your own Twilio account —
+      about ₹1–2. No AI key needed; this is pure speech.
+    </div>
+    <div id="v-result" style="margin-top:12px"></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><div class="card-title">How a call works</div></div>
+  <div class="card-body">
+    <ol style="list-style:none;counter-reset:s">
+      {% for step in [
+        ('Twilio dials the number', 'Using your own Twilio account and phone number, so call charges go directly to you.'),
+        ('Answering machine check', 'If voicemail picks up, the call is hung up immediately instead of talking to a recording.'),
+        ('The agent greets them', 'Your greeting is spoken with placeholders like {name} filled in from the contact row.'),
+        ('Conversation', 'Speech is transcribed, sent to Groq with the full history plus your FAQs, and the reply is spoken back.'),
+        ('Outcome saved', 'When the call ends, it is classified (interested, confirmed, callback…), summarised, and stored with the transcript.')
+      ] %}
+      <li style="counter-increment:s;position:relative;padding:0 0 18px 38px;
+                 border-left:1px solid var(--border);margin-left:11px">
+        <span style="position:absolute;left:-11px;top:0;width:22px;height:22px;border-radius:50%;
+                     background:var(--primary);color:#000;font-size:11px;font-weight:700;
+                     display:flex;align-items:center;justify-content:center">{{ loop.index }}</span>
+        <div style="font-weight:600;font-size:13.5px">{{ step[0] }}</div>
+        <div class="note" style="margin-top:2px">{{ step[1] }}</div>
+      </li>
+      {% endfor %}
+    </ol>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// "One voice in all languages" needs to know WHICH voice; "all 8" doesn't.
+document.getElementById("v-mode").addEventListener("change", (e) => {
+  document.getElementById("v-which").style.display =
+    e.target.value === "languages" ? "block" : "none";
+});
+
+async function previewVoices(btn) {
+  const phone = document.getElementById("v-phone").value.trim();
+  const box = document.getElementById("v-result");
+  if (!phone) { toast("Enter your phone number.", "bad"); return; }
+
+  await action(btn, "Calling…", async () => {
+    const d = await post("/api/call/preview-voices", {
+      phone,
+      mode: document.getElementById("v-mode").value,
+      voice: document.getElementById("v-voice").value,
+    });
+    box.innerHTML = `<div class="${d.ok ? "ok" : "bad"}" style="font-size:13.5px">
+      ${d.ok ? "✓" : "✗"} ${d.detail}</div>`;
+    if (d.ok) toast("Your phone should ring shortly.", "good");
+  });
+}
+
+async function placeCall(btn) {
+  const phone = document.getElementById("t-phone").value.trim();
+  const box = document.getElementById("call-result");
+  if (!phone) { toast("Enter a phone number.", "bad"); return; }
+
+  await action(btn, "Dialling…", async () => {
+    const d = await post("/api/call/test", {
+      phone,
+      campaign_id: document.getElementById("t-campaign").value,
+      agent_id: document.getElementById("t-agent").value,
+    });
+    box.innerHTML = `<div class="${d.ok ? "ok" : "bad"}" style="font-size:13.5px">
+      ${d.ok ? "✓" : "✗"} ${d.detail}</div>`;
+    if (d.ok) toast("Call placed — your phone should ring shortly.", "good");
+  });
+}
+</script>
+{% endblock %}

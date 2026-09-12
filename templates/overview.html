@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block heading %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="grid c4">
+  <div class="metric">
+    <div class="metric-label">Total calls</div>
+    <div class="metric-val">{{ stats.total }}</div>
+    <div class="metric-sub">{{ stats.total_minutes }} minutes</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">Connected</div>
+    <div class="metric-val" style="color:var(--green)">{{ stats.connected }}</div>
+    <div class="metric-sub">{{ stats.connect_rate }}% connect rate</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">Positive outcomes</div>
+    <div class="metric-val" style="color:var(--primary)">{{ stats.converted }}</div>
+    <div class="metric-sub">{{ stats.convert_rate }}% of calls</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">Avg duration</div>
+    <div class="metric-val">{{ stats.avg_duration }}</div>
+    <div class="metric-sub">answered calls only</div>
+  </div>
+</div>
+
+{% if not twilio_connected or not groq_connected %}
+<div class="banner amber">
+  <div style="flex:1;min-width:260px">
+    <div style="font-weight:600;font-size:14px;color:var(--amber);margin-bottom:3px">
+      Finish setting up</div>
+    <div style="font-size:13px;color:var(--muted)">
+      {% if not twilio_connected %}Connect your Twilio account{% endif %}
+      {% if not twilio_connected and not groq_connected %} and {% endif %}
+      {% if not groq_connected %}choose an AI provider{% endif %}
+      to start placing calls.
+    </div>
+  </div>
+  <a href="/settings" class="btn btn-primary">Open settings</a>
+</div>
+{% endif %}
+
+<div class="grid c2">
+  <div class="card">
+    <div class="card-head"><div class="card-title">Call outcomes</div></div>
+    <div class="card-body" id="outcome-bars"></div>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">Last 14 days</div>
+      <span class="mono">{{ running }} campaign(s) running</span>
+    </div>
+    <div class="card-body" id="trend"></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <div class="card-title">Best time to call</div>
+    <span class="mono">by hour · {{ company.timezone }}</span>
+  </div>
+  <div class="card-body" id="hourly"></div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <div class="card-title">Recent calls</div>
+    <a href="/history" class="btn btn-ghost btn-sm">View all</a>
+  </div>
+  <div class="table-scroll"><table id="recent-table"></table></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const STATS = {{ stats_json | safe }};
+const RECENT = {{ recent_json | safe }};
+
+function renderRecent() {
+  const t = document.getElementById("recent-table");
+  if (!RECENT.length) {
+    t.innerHTML = '<tbody><tr><td class="empty">No calls yet. Create a campaign to get started.</td></tr></tbody>';
+    return;
+  }
+  t.innerHTML =
+    "<thead><tr><th>Name</th><th>Phone</th><th>Campaign</th><th>Outcome</th><th>Duration</th></tr></thead><tbody>" +
+    RECENT.map(r => `<tr>
+        <td>${r.name}</td>
+        <td class="mono">${r.phone}</td>
+        <td class="mono">${r.campaign}</td>
+        <td><span class="tag ${outcomeClass(r.status)}">${pretty(r.status)}</span></td>
+        <td class="mono">${r.dur}</td>
+      </tr>`).join("") + "</tbody>";
+}
+
+function renderOutcomes() {
+  const el = document.getElementById("outcome-bars");
+  const entries = Object.entries(STATS.breakdown).sort((a, b) => b[1] - a[1]);
+  const total = entries.reduce((s, [, v]) => s + v, 0);
+  if (!total) { el.innerHTML = '<div class="empty">No calls yet.</div>'; return; }
+
+  el.innerHTML = entries.map(([name, count]) => {
+    const pct = Math.round((count / total) * 100);
+    const color = GOOD.includes(name) ? "var(--green)"
+                : BAD.includes(name)  ? "#ff6688"
+                : "var(--primary)";
+    return `<div style="margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px">
+        <span>${pretty(name)}</span>
+        <span class="mono" style="color:${color}">${pct}% (${count})</span>
+      </div>
+      <div style="height:7px;background:var(--surface-3);border-radius:100px;overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:${color};opacity:.85"></div>
+      </div></div>`;
+  }).join("");
+}
+
+function renderTrend() {
+  const el = document.getElementById("trend");
+  const data = STATS.trend || [];
+  if (!data.length) { el.innerHTML = '<div class="empty">No calls in the last 14 days.</div>'; return; }
+  const max = Math.max(...data.map(d => d.calls), 1);
+
+  el.innerHTML =
+    `<div style="display:flex;align-items:flex-end;gap:5px;height:150px">` +
+    data.map(d => {
+      const h = Math.max(4, Math.round((d.calls / max) * 130));
+      const label = d.date.slice(5).replace("-", "/");
+      return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px"
+                   title="${label}: ${d.calls} call(s)">
+        <div style="width:100%;height:${h}px;background:var(--primary);opacity:.75;border-radius:4px 4px 0 0"></div>
+        <div class="mono" style="font-size:9px">${label}</div>
+      </div>`;
+    }).join("") + `</div>`;
+}
+
+function renderHourly() {
+  const el = document.getElementById("hourly");
+  const data = STATS.hourly || [];
+  const max = Math.max(...data, 0);
+  if (!max) { el.innerHTML = '<div class="empty">No calls yet.</div>'; return; }
+
+  // Highlight the busiest hour - that is the actionable bit, not the shape.
+  const best = data.indexOf(max);
+  const label = (h) => `${String(h).padStart(2, "0")}:00`;
+
+  el.innerHTML =
+    `<div class="note" style="margin:0 0 14px">
+       Most calls connect around <b style="color:var(--primary)">${label(best)}</b>.
+     </div>
+     <div style="display:flex;align-items:flex-end;gap:3px;height:120px">` +
+    data.map((count, hour) => {
+      const h = count ? Math.max(3, Math.round((count / max) * 100)) : 2;
+      const isBest = hour === best;
+      return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:5px"
+                   title="${label(hour)} — ${count} call(s)">
+        <div style="width:100%;height:${h}px;border-radius:3px 3px 0 0;
+                    background:${isBest ? "var(--primary)" : "var(--surface-3)"};
+                    opacity:${count ? 1 : 0.4}"></div>
+        <div class="mono" style="font-size:8px;color:${isBest ? "var(--primary)" : "var(--hint)"}">
+          ${hour % 3 === 0 ? String(hour).padStart(2, "0") : ""}</div>
+      </div>`;
+    }).join("") + `</div>`;
+}
+
+renderRecent();
+renderOutcomes();
+renderTrend();
+renderHourly();
+</script>
+{% endblock %}

@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}Knowledge Base{% endblock %}
+{% block heading %}Knowledge Base{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-head">
+    <div class="card-title">FAQs — the agent's memory for your business</div>
+    <span class="mono">{{ faqs|length }} saved</span>
+  </div>
+  <div class="card-body">
+    <p class="note" style="margin:0 0 16px">
+      Add questions your customers commonly ask. The agent uses these on
+      <b>every</b> call, across all campaigns — no need to repeat them in each script.
+    </p>
+
+    <div id="faq-list">
+      {% for f in faqs %}
+      <div class="faq-row" id="faq-{{ f.id }}"
+           style="background:var(--surface-2);border:1px solid var(--border);border-radius:9px;
+                  padding:13px 15px;margin-bottom:8px;display:flex;justify-content:space-between;
+                  gap:14px;align-items:flex-start">
+        <div>
+          <div style="font-weight:600;font-size:13.5px;margin-bottom:3px">Q: {{ f.question }}</div>
+          <div style="font-size:13.5px;color:var(--muted)">A: {{ f.answer }}</div>
+        </div>
+        <button class="btn btn-danger btn-sm" style="flex-shrink:0"
+                onclick="removeFaq({{ f.id }})">Remove</button>
+      </div>
+      {% else %}
+      <div class="empty">No FAQs yet — add your first one below.</div>
+      {% endfor %}
+    </div>
+
+    <div class="grid c2" style="margin-top:18px">
+      <div><label>Question</label>
+        <input id="faq-q" placeholder="e.g. Do you offer cash on delivery?"/></div>
+      <div><label>Answer</label>
+        <input id="faq-a" placeholder="e.g. Yes, COD is available on all orders under ₹5000."/></div>
+    </div>
+    <button class="btn btn-primary" style="margin-top:16px" onclick="addFaq(this)">Add FAQ</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function esc(s) {
+  const d = document.createElement("div");
+  d.textContent = s || "";
+  return d.innerHTML;
+}
+
+async function addFaq(btn) {
+  const q = document.getElementById("faq-q");
+  const a = document.getElementById("faq-a");
+  if (!q.value.trim() || !a.value.trim()) {
+    toast("Enter both a question and an answer.", "bad");
+    return;
+  }
+
+  await action(btn, "Saving…", async () => {
+    const d = await post("/api/faq", { question: q.value.trim(), answer: a.value.trim() });
+    if (!d.ok) { toast(d.detail, "bad"); return; }
+
+    const list = document.getElementById("faq-list");
+    list.querySelector(".empty")?.remove();
+
+    const row = document.createElement("div");
+    row.id = "faq-" + d.id;
+    row.className = "faq-row";
+    row.style.cssText =
+      "background:var(--surface-2);border:1px solid var(--border);border-radius:9px;" +
+      "padding:13px 15px;margin-bottom:8px;display:flex;justify-content:space-between;" +
+      "gap:14px;align-items:flex-start";
+    row.innerHTML = `
+      <div>
+        <div style="font-weight:600;font-size:13.5px;margin-bottom:3px">Q: ${esc(d.question)}</div>
+        <div style="font-size:13.5px;color:var(--muted)">A: ${esc(d.answer)}</div>
+      </div>
+      <button class="btn btn-danger btn-sm" style="flex-shrink:0"
+              onclick="removeFaq(${d.id})">Remove</button>`;
+    list.appendChild(row);
+
+    q.value = ""; a.value = "";
+    toast("FAQ added.", "good");
+  });
+}
+
+async function removeFaq(id) {
+  const d = await post(`/api/faq/${id}/delete`);
+  if (!d.ok) { toast(d.detail, "bad"); return; }
+
+  document.getElementById("faq-" + id)?.remove();
+  const list = document.getElementById("faq-list");
+  if (!list.querySelector(".faq-row")) {
+    list.innerHTML = '<div class="empty">No FAQs yet — add your first one below.</div>';
+  }
+}
+</script>
+{% endblock %}

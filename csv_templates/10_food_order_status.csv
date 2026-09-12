@@ -1,0 +1,4 @@
+phone,name,order_id,product,amount,exp_delivery_date,exp_delivery_time,address,info
++917984165161,Avani,SJ501,Butter Chicken with Naan,650,today,in 30 min,Andheri West Mumbai,Out for delivery
++919876543210,Rahul,SJ502,Veg Hakka Noodles,420,today,in 45 min,Bandra East Mumbai,Being prepared
++919123456789,Priya,SJ503,Paneer Tikka,580,today,in 20 min,Powai Mumbai,Just left the kitchen

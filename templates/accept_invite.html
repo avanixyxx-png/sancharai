@@ -1,0 +1,22 @@
+{% extends "auth_base.html" %}
+{% block title %}Accept invitation{% endblock %}
+
+{% block content %}
+<h1>Join {{ company_name }}</h1>
+<div class="sub">Set a password for <b>{{ email }}</b> to accept the invitation.</div>
+
+{% if error %}<div class="alert">{{ error }}</div>{% endif %}
+
+<form method="post" action="/invite/{{ token }}">
+  <label>Choose a password</label>
+  <input name="password" type="password" required minlength="8" autofocus
+         placeholder="At least 8 characters"/>
+  <button class="btn btn-primary">Accept &amp; join</button>
+</form>
+{% endblock %}
+
+{% block foot %}
+<div class="auth-foot">
+  Wrong account? <a href="/login">Sign in instead</a>
+</div>
+{% endblock %}

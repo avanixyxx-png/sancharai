@@ -1,0 +1,28 @@
+{% extends "auth_base.html" %}
+{% block title %}Sign in{% endblock %}
+
+{% block content %}
+<h1>Welcome back</h1>
+<div class="sub">Sign in to your workspace.</div>
+
+{% if error %}<div class="alert">{{ error }}</div>{% endif %}
+
+<form method="post" action="/login">
+  <label>Email address</label>
+  <input name="email" type="email" required autofocus value="{{ email or '' }}"
+         placeholder="you@company.com"/>
+  <label>Password</label>
+  <input name="password" type="password" required placeholder="Your password"/>
+  <button class="btn btn-primary">Sign in</button>
+</form>
+
+<div style="text-align:center;margin-top:14px">
+  <a href="/forgot-password" style="font-size:13px;color:var(--muted)">Forgot your password?</a>
+</div>
+{% endblock %}
+
+{% block foot %}
+<div class="auth-foot">
+  Don't have an account? <a href="/signup">Create one</a>
+</div>
+{% endblock %}

@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Call History{% endblock %}
+{% block heading %}Call History{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-head">
+    <div class="card-title">All calls</div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <input style="width:250px;padding:7px 12px;font-size:13px"
+             placeholder="Search name, number or outcome…" oninput="filterTable('all-table', this.value)"/>
+      <button class="btn btn-ghost btn-sm" onclick="sortByScore(this)">Sort by score</button>
+      <a href="/history/download" class="btn btn-primary btn-sm" download>Export CSV</a>
+    </div>
+  </div>
+  <div class="table-scroll"><table id="all-table"></table></div>
+</div>
+
+<div id="modal-host"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const CALLS = {{ calls_json | safe }};
+let sorted = false;
+
+/** Lead-quality bar, 0-100. Colour tracks the same good/bad scale as outcomes. */
+function scoreCell(score) {
+  const color = score >= 70 ? "var(--green)"
+              : score >= 40 ? "var(--primary)"
+              : "#ff6688";
+  return `<div style="display:flex;align-items:center;gap:8px">
+    <div style="flex:1;min-width:44px;height:5px;background:var(--surface-3);
+                border-radius:100px;overflow:hidden">
+      <div style="height:100%;width:${score}%;background:${color}"></div>
+    </div>
+    <span class="mono" style="color:${color};font-size:11px">${score}</span>
+  </div>`;
+}
+
+function render() {
+  const t = document.getElementById("all-table");
+  if (!CALLS.length) {
+    t.innerHTML = '<tbody><tr><td class="empty">No calls yet.</td></tr></tbody>';
+    return;
+  }
+  const rows = sorted ? [...CALLS].sort((a, b) => b.score - a.score) : CALLS;
+
+  t.innerHTML =
+    "<thead><tr><th>When</th><th>Name</th><th>Phone</th><th>Campaign</th>" +
+    "<th>Outcome</th><th>Lead score</th><th>Duration</th><th></th></tr></thead><tbody>" +
+    rows.map((r) => `<tr>
+        <td class="mono">${r.when}</td>
+        <td>${r.name}</td>
+        <td class="mono">${r.phone}</td>
+        <td class="mono">${r.campaign}</td>
+        <td><span class="tag ${outcomeClass(r.status)}">${pretty(r.status)}</span></td>
+        <td style="min-width:110px">${scoreCell(r.score)}</td>
+        <td class="mono">${r.dur}</td>
+        <td style="text-align:right">
+          <button class="btn btn-ghost btn-sm" onclick="openCall(${CALLS.indexOf(r)})">Details</button>
+        </td>
+      </tr>`).join("") + "</tbody>";
+}
+
+function sortByScore(btn) {
+  sorted = !sorted;
+  btn.textContent = sorted ? "Sort by date" : "Sort by score";
+  render();
+}
+
+function esc(s) {
+  const d = document.createElement("div");
+  d.textContent = s || "";
+  return d.innerHTML;
+}
+
+function openCall(i) {
+  const c = CALLS[i];
+  const turns = (c.transcript || "")
+    .split(" | ")
+    .filter(Boolean)
+    .map(line => {
+      const isCustomer = line.startsWith("CUSTOMER:");
+      const text = line.replace(/^(CUSTOMER|AI):\s*/, "");
+      return `<div style="margin-bottom:10px">
+        <div class="mono" style="font-size:10px;color:${isCustomer ? "var(--primary)" : "var(--muted)"}">
+          ${isCustomer ? "CUSTOMER" : "AGENT"}</div>
+        <div style="font-size:13.5px">${esc(text)}</div>
+      </div>`;
+    }).join("");
+
+  document.getElementById("modal-host").innerHTML = `
+    <div class="modal-bg" onclick="if(event.target===this) closeCall()">
+      <div class="modal">
+        <div class="card-head">
+          <div>
+            <div class="card-title">${esc(c.name)} — ${esc(c.phone)}</div>
+            <div class="mono" style="font-size:11px">${esc(c.when)} · ${esc(c.dur)} · ${esc(c.campaign)}</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="closeCall()">Close</button>
+        </div>
+        <div class="card-body">
+          <span class="tag ${outcomeClass(c.status)}">${pretty(c.status)}</span>
+          ${c.summary ? `<p style="margin-top:14px;font-size:13.5px"><b>Summary:</b> ${esc(c.summary)}</p>` : ""}
+          ${c.action ? `<p style="margin-top:8px;font-size:13.5px;color:var(--muted)"><b>Next step:</b> ${esc(c.action)}</p>` : ""}
+          <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+            <div class="card-title" style="margin-bottom:14px">Transcript</div>
+            ${turns || '<div class="empty">No conversation was recorded.</div>'}
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function closeCall() {
+  document.getElementById("modal-host").innerHTML = "";
+}
+
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeCall(); });
+render();
+</script>
+{% endblock %}

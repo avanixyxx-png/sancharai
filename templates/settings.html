@@ -1,0 +1,673 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block heading %}Settings{% endblock %}
+
+{% block content %}
+{% if request.query_params.get('saved') %}
+<div class="banner" style="background:rgba(0,255,157,.07);border:1px solid rgba(0,255,157,.3)">
+  <div style="color:var(--green);font-size:13.5px;font-weight:500">✓ Settings saved.</div>
+</div>
+{% endif %}
+{% if request.query_params.get('delete_error') %}
+<div class="banner" style="background:rgba(255,51,102,.07);border:1px solid rgba(255,51,102,.3)">
+  <div class="bad" style="font-size:13.5px">
+    {% set e = request.query_params.get('delete_error') %}
+    {% if e == 'owner' %}Only the workspace owner can delete the account.
+    {% elif e == 'csrf' %}Security check failed. Please reload and try again.
+    {% else %}Incorrect password — nothing was deleted.{% endif %}
+  </div>
+</div>
+{% endif %}
+
+<form method="post" action="/settings">
+  <input type="hidden" name="csrf_token" value="{{ csrf }}"/>
+
+  <div class="card">
+    <div class="card-head"><div class="card-title">Telephony provider</div></div>
+    <div class="card-body">
+      <p class="note" style="margin:0 0 8px">
+        Twilio is a premium international carrier (~₹4.3/min to an Indian mobile).
+        Plivo is an Indian-market carrier with a Twilio-compatible model (~₹0.6/min
+        on the same route). Pick whichever your credentials below are set up for —
+        this only affects calls placed AFTER you save; a call already in progress
+        keeps using whatever it started with.
+      </p>
+      <label>Active provider</label>
+      <select name="telephony_provider" id="telephony_provider" onchange="toggleProviderCards()">
+        <option value="twilio" {% if settings.telephony_provider != 'plivo' %}selected{% endif %}>Twilio</option>
+        <option value="plivo" {% if settings.telephony_provider == 'plivo' %}selected{% endif %}>Plivo</option>
+      </select>
+      <div id="plivo-voice-warning" class="note bad" style="margin-top:10px;display:none">
+        ⚠ Your multilingual voice (Chirp3-HD) is a Twilio/Google feature. It is
+        NOT confirmed to work on Plivo — Plivo may reject it or fall back to a
+        different voice mid-call. Test a real call on Plivo before relying on
+        multi-language agents in production.
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:18px" id="twilio-card">
+    <div class="card-head"><div class="card-title">Your Twilio account</div></div>
+    <div class="card-body">
+      <p class="note" style="margin:0 0 8px">
+        You connect your own Twilio account, so call charges go directly to you.
+        Credentials are encrypted before they are stored and are never sent back to this page.
+      </p>
+      <label>Account SID</label>
+      <input name="twilio_account_sid" value="{{ settings.twilio_account_sid }}"
+             placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"/>
+      <label>Auth Token</label>
+      <input name="twilio_auth_token" type="password"
+             placeholder="{{ masked_token or 'Enter your auth token' }}"/>
+      <div class="note">Leave blank to keep the current one.</div>
+      <label>Your Twilio phone number</label>
+      <input name="twilio_phone_number" value="{{ settings.twilio_phone_number }}"
+             placeholder="+17406968280"/>
+
+      <div style="margin-top:18px">
+        <button type="button" class="btn btn-ghost" onclick="testTwilio(this)">Test connection</button>
+        <span id="twilio-test" style="margin-left:12px;font-size:13px"></span>
+      </div>
+
+      <label style="margin-top:22px">Your webhook address</label>
+      <div class="codebox">{{ webhook_base }}/voice</div>
+      <div class="note">
+        Twilio calls this back during a conversation. The random token in the path is
+        what identifies your workspace — treat it like a password.
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:18px" id="plivo-card">
+    <div class="card-head"><div class="card-title">Your Plivo account</div></div>
+    <div class="card-body">
+      <p class="note" style="margin:0 0 8px">
+        You connect your own Plivo account, so call charges go directly to you.
+        Credentials are encrypted before they are stored and are never sent back to this page.
+      </p>
+      <label>Auth ID</label>
+      <input name="plivo_auth_id" value="{{ settings.plivo_auth_id }}"
+             placeholder="MAxxxxxxxxxxxxxxxxxxxx"/>
+      <label>Auth Token</label>
+      <input name="plivo_auth_token" type="password"
+             placeholder="{{ masked_plivo_token or 'Enter your auth token' }}"/>
+      <div class="note">Leave blank to keep the current one.</div>
+      <label>Your Plivo phone number</label>
+      <input name="plivo_phone_number" value="{{ settings.plivo_phone_number }}"
+             placeholder="+917406968280"/>
+
+      <div style="margin-top:18px">
+        <button type="button" class="btn btn-ghost" onclick="testPlivo(this)">Test connection</button>
+        <span id="plivo-test" style="margin-left:12px;font-size:13px"></span>
+      </div>
+
+      <label style="margin-top:22px">Your webhook address</label>
+      <div class="codebox">{{ webhook_base }}/voice</div>
+      <div class="note">
+        Plivo calls this back during a conversation. The random token in the path is
+        what identifies your workspace — treat it like a password.
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function toggleProviderCards() {
+      var p = document.getElementById('telephony_provider').value;
+      document.getElementById('twilio-card').style.display = p === 'twilio' ? '' : 'none';
+      document.getElementById('plivo-card').style.display = p === 'plivo' ? '' : 'none';
+      var chirp = "{{ settings.voice }}".toLowerCase().indexOf('chirp3') !== -1;
+      document.getElementById('plivo-voice-warning').style.display = (p === 'plivo' && chirp) ? '' : 'none';
+    }
+    toggleProviderCards();
+  </script>
+
+  <div class="card" style="margin-top:18px">
+    <div class="card-head"><div class="card-title">Speech recognition</div></div>
+    <div class="card-body">
+      <p class="note" style="margin:0 0 8px">
+        How the caller's words get turned into text. Twilio charges about ₹1.75
+        <em>every turn</em> for this — at three turns a minute that costs more
+        than the call itself. Deepgram streams the audio instead at a flat
+        ~₹0.51/min, which cuts a typical call bill from about ₹15/min to ₹6/min.
+      </p>
+      <div class="seg">
+        <label>
+          <input type="radio" name="stt_provider" value="carrier" onchange="showStt()"
+                 {{ 'checked' if settings.stt_provider != 'deepgram' }}/>
+          <span>Twilio — no setup, billed per turn</span>
+        </label>
+        <label>
+          <input type="radio" name="stt_provider" value="deepgram" onchange="showStt()"
+                 {{ 'checked' if settings.stt_provider == 'deepgram' }}/>
+          <span>Deepgram — cheaper, needs a key</span>
+        </label>
+      </div>
+
+      <div id="p-deepgram" class="prov">
+        <label>Deepgram API key</label>
+        <input name="deepgram_api_key" type="password"
+               placeholder="{{ masked_deepgram or 'Enter your Deepgram API key' }}"/>
+        <div class="note">
+          Free $200 credit at deepgram.com — about 34,000 minutes. Stored
+          encrypted. Leave blank to keep the current one.
+        </div>
+        <div class="note warn" style="margin-top:10px">
+          Currently Twilio-only, and newer than the rest of the call path —
+          place a test call and confirm the agent still answers before using
+          this on a live campaign.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:18px">
+    <div class="card-head">
+      <div class="card-title">AI brain</div>
+      <span class="mono">currently: {{ ai_provider }}</span>
+    </div>
+    <div class="card-body">
+      <label>Which AI answers your customers</label>
+      <div class="seg">
+        <label>
+          <input type="radio" name="ai_provider" value="groq" onchange="showProvider()"
+                 {{ 'checked' if settings.ai_provider not in ('ollama', 'openai', 'nvidia') }}/>
+          <span>Groq — fast, free tier</span>
+        </label>
+        <label>
+          <input type="radio" name="ai_provider" value="ollama" onchange="showProvider()"
+                 {{ 'checked' if settings.ai_provider == 'ollama' }}/>
+          <span>Ollama — your own server</span>
+        </label>
+        <label>
+          <input type="radio" name="ai_provider" value="openai" onchange="showProvider()"
+                 {{ 'checked' if settings.ai_provider == 'openai' }}/>
+          <span>OpenAI — paid</span>
+        </label>
+        <label>
+          <input type="radio" name="ai_provider" value="nvidia" onchange="showProvider()"
+                 {{ 'checked' if settings.ai_provider == 'nvidia' }}/>
+          <span>NVIDIA NIM — free tier</span>
+        </label>
+      </div>
+
+      <div id="p-groq" class="prov">
+        <div class="grid c2">
+          <div><label>Groq API key</label>
+            <input name="groq_api_key" type="password" placeholder="{{ masked_groq or 'gsk_...' }}"/>
+            <div class="note">Free at console.groq.com. Stored encrypted. Leave blank to keep the current one.</div></div>
+          <div><label>Model</label>
+            <select name="groq_model">
+              {% for m in ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile', 'llama-3.1-70b-versatile'] %}
+              <option value="{{ m }}" {{ 'selected' if settings.groq_model == m }}>{{ m }}</option>
+              {% endfor %}
+            </select>
+            <div class="note">8b is fastest — best for live calls, where a pause is dead air.</div></div>
+        </div>
+      </div>
+
+      <div id="p-ollama" class="prov">
+        <div class="grid c2">
+          <div><label>Ollama server address</label>
+            <input name="ollama_host" value="{{ settings.ollama_host }}"
+                   placeholder="http://localhost:11434"/>
+            <div class="note">
+              Your own machine — no API key, no per-call cost, and the conversation
+              never leaves your network.
+            </div></div>
+          <div><label>Model</label>
+            <input name="ollama_model" value="{{ settings.ollama_model }}" placeholder="llama3.2"/>
+            <div class="note">
+              Run <span class="mono">ollama pull llama3.2</span> first. Small models
+              reply fastest; anything over ~3s leaves the caller waiting in silence.
+            </div></div>
+        </div>
+        <div class="note warn" style="margin-top:10px">
+          The server must be reachable from wherever SancharAI runs. If SancharAI is
+          hosted and Ollama is on your laptop, <span class="mono">localhost</span> won't work.
+        </div>
+      </div>
+
+      <div id="p-openai" class="prov">
+        <div class="grid c2">
+          <div><label>OpenAI API key</label>
+            <input name="openai_api_key" type="password" placeholder="{{ masked_openai or 'sk-...' }}"/>
+            <div class="note">Stored encrypted. Billed to your own OpenAI account.</div></div>
+          <div><label>Model</label>
+            <select name="openai_model">
+              {% for m in ['gpt-4o-mini', 'gpt-4o'] %}
+              <option value="{{ m }}" {{ 'selected' if settings.openai_model == m }}>{{ m }}</option>
+              {% endfor %}
+            </select>
+            <div class="note">4o-mini is the cheaper, faster choice for calls.</div></div>
+        </div>
+      </div>
+
+      <div id="p-nvidia" class="prov">
+        <div class="grid c2">
+          <div><label>NVIDIA API key</label>
+            <input name="nvidia_api_key" type="password" placeholder="{{ masked_nvidia or 'nvapi-...' }}"/>
+            <div class="note">Free at build.nvidia.com. Stored encrypted. Leave blank to keep the current one.</div></div>
+          <div><label>Model</label>
+            <input name="nvidia_model" value="{{ settings.nvidia_model }}"
+                   list="nvidia-models" placeholder="nvidia/nvidia-nemotron-nano-9b-v2"/>
+            <datalist id="nvidia-models">
+              <option value="nvidia/nvidia-nemotron-nano-9b-v2">
+              <option value="meta/llama-3.2-3b-instruct">
+              <option value="meta/llama-3.2-1b-instruct">
+              <option value="nvidia/nemotron-3-super-120b-a12b">
+            </datalist>
+            <div class="note">
+              Any model id from build.nvidia.com works here. nemotron-nano-9b-v2 is
+              fastest for live calls; larger models (like the 120B MoE) add latency —
+              test a real call before trusting one in production.
+            </div></div>
+        </div>
+      </div>
+
+      <div style="margin-top:18px">
+        <button type="button" class="btn btn-ghost" onclick="testAi(this)">Test AI connection</button>
+        <span id="ai-test" style="margin-left:12px;font-size:13px"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:18px">
+    <div class="card-head"><div class="card-title">Cost controls</div></div>
+    <div class="card-body">
+      <div class="grid c2">
+        <div>
+          <label>Hang up on voicemail</label>
+          <label style="display:flex;align-items:center;gap:10px;margin:0;
+                        padding:10px 13px;border:1px solid var(--border-2);
+                        border-radius:9px;cursor:pointer;color:var(--text)">
+            <input type="checkbox" name="detect_voicemail" value="1"
+                   style="width:auto;margin:0"
+                   {{ 'checked' if settings.detect_voicemail }}/>
+            <span style="font-size:13.5px;font-weight:400">Detect answering machines</span>
+          </label>
+          <div class="note">
+            Saves roughly ₹6 per voicemail avoided, costs about ₹0.60 per call to
+            detect. Adds 2–4 seconds before the greeting when a human answers.
+          </div>
+        </div>
+        <div>
+          <label>Maximum call length (seconds)</label>
+          <input name="max_call_seconds" type="number" min="30" max="1800"
+                 value="{{ settings.max_call_seconds }}"/>
+          <div class="note">
+            Hard cap so a stuck call can't burn credit. 180s suits reminders;
+            raise it for support calls.
+          </div>
+        </div>
+        <div>
+          <label>How fast the agent replies</label>
+          <select name="speech_timeout">
+            <option value="auto" {{ 'selected' if settings.speech_timeout == 'auto' }}>
+              Fast — reply as soon as they stop talking</option>
+            {% for n in ['1','2','3','4','5'] %}
+            <option value="{{ n }}" {{ 'selected' if settings.speech_timeout == n }}>
+              Wait {{ n }} second{{ 's' if n != '1' }} of silence first</option>
+            {% endfor %}
+          </select>
+          <div class="note">
+            This is the biggest factor in how quick the agent feels. <b>Fast</b> uses
+            Twilio's end-of-speech detection and replies in well under a second.
+            Choose a fixed wait only if your customers pause mid-sentence and are
+            getting cut off.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:18px">
+    <div class="card-head"><div class="card-title">Human handoff</div></div>
+    <div class="card-body">
+      <p class="note" style="margin:0 0 10px">
+        When the agent hits something it can't handle — an angry customer, a question
+        outside its knowledge, or a direct request for a person — it transfers the
+        <b>live call</b> to this number instead of promising a callback.
+      </p>
+      <label style="display:flex;align-items:center;gap:10px;margin:0 0 6px">
+        <input type="checkbox" name="handoff_enabled" value="1" style="width:auto"
+               {{ 'checked' if settings.handoff_enabled }}/>
+        <span>Transfer to a person when the agent can't help</span>
+      </label>
+      <label>Number to transfer to</label>
+      <input name="handoff_number" value="{{ settings.handoff_number }}" placeholder="+919876543210"/>
+      <div class="note">
+        Must be a number someone actually answers during your calling hours. If nobody
+        picks up within 25 seconds, the customer is told you'll call back rather than
+        being left in silence. The transferred call shows your Twilio number as caller ID.
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:18px">
+    <div class="card-head"><div class="card-title">Webhooks &amp; integrations</div></div>
+    <div class="card-body">
+      <p class="note" style="margin:0 0 10px">
+        Send every finished call to your own system — CRM, Zapier, Make, n8n, or your
+        own backend. We POST a JSON body with the outcome, lead score, summary and
+        full transcript as soon as the call ends.
+      </p>
+      <label>Webhook URL</label>
+      <input name="webhook_out_url" value="{{ settings.webhook_out_url }}"
+             placeholder="https://hooks.zapier.com/hooks/catch/..."/>
+      <div class="note">Leave blank to disable. Must start with http:// or https://</div>
+
+      {% if settings.webhook_out_secret %}
+      <label style="margin-top:16px">Signing secret</label>
+      <div class="codebox">{{ settings.webhook_out_secret }}</div>
+      <div class="note">
+        Each request carries an <span class="mono">X-SancharAI-Signature</span> header —
+        an HMAC-SHA256 of the raw body using this secret. Verify it on your side so you
+        know the request really came from us and not from anyone who guessed your URL.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:18px">
+    <div class="card-head"><div class="card-title">Appointments</div></div>
+    <div class="card-body">
+      <label style="display:flex;align-items:center;gap:10px;margin:0 0 6px">
+        <input type="checkbox" name="booking_enabled" value="1" style="width:auto"
+               {{ 'checked' if settings.booking_enabled }}/>
+        <span>Let the agent book appointments during a call</span>
+      </label>
+      <div class="note" style="margin-top:0">
+        The agent checks your diary before confirming. If the customer asks for a slot
+        that's already taken, it says so and offers the next free one instead of
+        double-booking you. Bookings appear under
+        <a href="/appointments" style="color:var(--primary)">Appointments</a>.
+      </div>
+
+      <div class="grid c4" style="margin-top:14px">
+        <div><label>Slot length</label>
+          <select name="booking_slot_minutes">
+            {% for m in [15, 20, 30, 45, 60, 90, 120] %}
+            <option value="{{ m }}" {{ 'selected' if settings.booking_slot_minutes == m }}>
+              {{ m }} minutes</option>
+            {% endfor %}
+          </select></div>
+        <div><label>First appointment</label>
+          <input name="booking_open" type="time" value="{{ settings.booking_open }}"/></div>
+        <div><label>Last appointment</label>
+          <input name="booking_close" type="time" value="{{ settings.booking_close }}"/></div>
+        <div><label>Book up to</label>
+          <input name="booking_days_ahead" type="number" min="1" max="365"
+                 value="{{ settings.booking_days_ahead }}"/>
+          <div class="note">days ahead</div></div>
+      </div>
+      <div class="note">
+        Times are in <b>{{ company.timezone }}</b>, the same zone as your call windows.
+      </div>
+
+      <div style="margin-top:22px;padding-top:18px;border-top:1px solid var(--border)">
+        <div style="font-weight:600;font-size:13.5px;margin-bottom:4px">Google Calendar</div>
+        {% if not google_configured %}
+        <div class="note">
+          Not available on this server — the operator needs to set
+          <span class="mono">GOOGLE_CLIENT_ID</span> and
+          <span class="mono">GOOGLE_CLIENT_SECRET</span>.
+        </div>
+        {% elif google_connected %}
+        <div class="note ok" style="margin-bottom:10px">
+          ✓ Connected. New bookings appear in your Google Calendar, and the agent
+          checks it for clashes before confirming — so a slot you block there can't
+          be double-booked on a call.
+        </div>
+        <a href="#" class="btn btn-ghost btn-sm" onclick="testGoogle(this);return false">Test connection</a>
+        <a href="#" class="btn btn-danger btn-sm" onclick="disconnectGoogle();return false">Disconnect</a>
+        <span id="g-test" style="margin-left:10px;font-size:13px"></span>
+        {% else %}
+        <div class="note" style="margin-bottom:10px">
+          Link your calendar so bookings appear where your team already looks —
+          and so the agent knows about anything you've blocked out there.
+        </div>
+        <a href="/settings/google/connect" class="btn btn-primary btn-sm">Connect Google Calendar</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:18px">
+    <div class="card-head"><div class="card-title">Your business</div></div>
+    <div class="card-body">
+      <div class="grid c2">
+        <div><label>Company name customers hear</label>
+          <input name="company_display_name" value="{{ settings.company_display_name }}"/></div>
+        <div><label>Default agent name</label>
+          <input name="agent_name" value="{{ settings.agent_name }}"/></div>
+      </div>
+      <label>What your business does</label>
+      <textarea name="business_desc" placeholder="e.g. We sell handmade cotton kurtas across India."
+                >{{ settings.business_desc }}</textarea>
+
+      <div class="grid c3">
+        <div><label>Default voice</label>
+          <select name="voice">
+            <optgroup label="Speaks all 7 languages (recommended)">
+              {% for v, lbl in [('Aoede','Aoede — female'),('Kore','Kore — female'),
+                                ('Leda','Leda — female'),('Zephyr','Zephyr — female'),
+                                ('Charon','Charon — male'),('Fenrir','Fenrir — male'),
+                                ('Orus','Orus — male'),('Puck','Puck — male')] %}
+              <option value="{{ v }}" {{ 'selected' if settings.voice == v }}>{{ lbl }}</option>
+              {% endfor %}
+            </optgroup>
+            <optgroup label="Single language only">
+              {% for v, lbl in [('Polly.Aditi','Priya — Hindi/Indian English female'),
+                                ('Google.gu-IN-Standard-A','Meera — Gujarati female'),
+                                ('Google.gu-IN-Standard-B','Jignesh — Gujarati male'),
+                                ('Polly.Joanna','Sarah — English female'),
+                                ('Polly.Matthew','Raj — English male')] %}
+              <option value="{{ v }}" {{ 'selected' if settings.voice == v }}>{{ lbl }}</option>
+              {% endfor %}
+            </optgroup>
+          </select>
+          <div class="note">
+            The top group speaks every language correctly and stays the same person
+            when a call switches language. Currently in beta at Twilio and may cost
+            more per minute — check your Twilio pricing before running volume on it.
+          </div></div>
+        <div><label>Default language</label>
+          <select name="speech_language">
+            {% for l, lbl in [('en-IN','English (India)'),('hi-IN','Hindi'),('gu-IN','Gujarati'),
+                              ('mr-IN','Marathi'),('ta-IN','Tamil'),('te-IN','Telugu'),('bn-IN','Bengali')] %}
+            <option value="{{ l }}" {{ 'selected' if settings.speech_language == l }}>{{ lbl }}</option>
+            {% endfor %}
+          </select></div>
+        <div><label>Workspace timezone</label>
+          <select name="company_timezone">
+            {% for tz in ['Asia/Kolkata','Asia/Dubai','Asia/Singapore','Europe/London',
+                          'America/New_York','America/Los_Angeles','Australia/Sydney','UTC'] %}
+            <option value="{{ tz }}" {{ 'selected' if company.timezone == tz }}>{{ tz }}</option>
+            {% endfor %}
+          </select>
+          <div class="note">Call windows and daily caps use this.</div></div>
+      </div>
+
+      <label style="display:flex;align-items:center;gap:10px;margin:16px 0 6px">
+        <input type="checkbox" name="ask_language" value="1" style="width:auto"
+               {{ 'checked' if settings.ask_language }}/>
+        <span>Ask the customer which language they prefer, before starting</span>
+      </label>
+      <div class="note" style="margin-top:0">
+        Opens with “Which language would you prefer? Hindi, English, Gujarati…”
+        and continues in whatever they say. More reliable than guessing the
+        language up front. If they don't answer clearly twice, it falls back to
+        the default language above and carries on.
+      </div>
+
+      <label style="display:flex;align-items:center;gap:10px;margin:16px 0 6px">
+        <input type="checkbox" name="auto_language_switch" value="1" style="width:auto"
+               {{ 'checked' if settings.auto_language_switch }}/>
+        <span>Let the agent follow the customer to another language mid-call</span>
+      </label>
+      <div class="note" style="margin-top:0">
+        Applies to Test Call, which has no campaign of its own. Each campaign has its
+        own version of this switch under Campaigns.
+      </div>
+
+      <button class="btn btn-primary" style="margin-top:22px">Save settings</button>
+    </div>
+  </div>
+</form>
+
+<div class="card" style="margin-top:18px">
+  <div class="card-head"><div class="card-title">Change password</div></div>
+  <div class="card-body">
+    <div class="grid c2">
+      <div><label>Current password</label>
+        <input id="pw-current" type="password" placeholder="Your current password"/></div>
+      <div><label>New password</label>
+        <input id="pw-new" type="password" placeholder="At least 8 characters"/></div>
+    </div>
+    <button type="button" class="btn btn-primary" style="margin-top:16px"
+            onclick="changePassword(this)">Update password</button>
+    <span id="pw-status" style="margin-left:12px;font-size:13px"></span>
+  </div>
+</div>
+
+{% if user.role == 'owner' %}
+<div class="card danger" style="margin-top:18px">
+  <div class="card-head"><div class="card-title bad">Danger zone</div></div>
+  <div class="card-body">
+    <p class="note" style="margin:0 0 14px">
+      Deleting your account permanently removes your company, every agent, campaign,
+      contact, call record and transcript, and your stored credentials.
+      <b class="bad">This cannot be undone.</b>
+    </p>
+    <button type="button" class="btn btn-danger" id="del-open"
+            onclick="document.getElementById('delete-confirm').style.display='block';this.style.display='none'">
+      Delete my account…</button>
+    <form id="delete-confirm" method="post" action="/delete-account" style="display:none"
+          onsubmit="return confirm('Really delete EVERYTHING? This cannot be undone.')">
+      <input type="hidden" name="csrf_token" value="{{ csrf }}"/>
+      <label>Confirm with your password</label>
+      <input name="password" type="password" required placeholder="Your password" style="max-width:340px"/>
+      <button class="btn" style="background:#c0392b;color:#fff;margin-top:14px">
+        Permanently delete account</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<style>
+  .prov { display: none; margin-top: 4px; }
+  .prov.on { display: block; }
+</style>
+<script>
+/** Only the chosen provider's fields are shown — three key boxes at once
+    invites putting a key in the wrong one. */
+function showStt() {
+  const picked = document.querySelector('input[name="stt_provider"]:checked').value;
+  document.getElementById("p-deepgram").classList.toggle("on", picked === "deepgram");
+}
+
+function showProvider() {
+  const picked = document.querySelector('input[name="ai_provider"]:checked').value;
+  ["groq", "ollama", "openai", "nvidia"].forEach(p => {
+    document.getElementById("p-" + p).classList.toggle("on", p === picked);
+  });
+}
+showProvider();
+showStt();
+
+/** Collect named fields from the settings form so the Test buttons check what
+    is on screen right now, not what was last saved. */
+function formValues(names) {
+  const out = {};
+  for (const n of names) {
+    const el = document.querySelector(`[name="${n}"]`);
+    if (!el) continue;
+    out[n] = el.type === "radio"
+      ? (document.querySelector(`[name="${n}"]:checked`)?.value || "")
+      : el.value;
+  }
+  return out;
+}
+
+async function testGoogle(btn) {
+  const out = document.getElementById("g-test");
+  out.textContent = "Testing…";
+  out.className = "";
+  const d = await post("/api/google/test");
+  out.textContent = (d.ok ? "✓ " : "✗ ") + d.detail;
+  out.className = d.ok ? "ok" : "bad";
+}
+
+async function disconnectGoogle() {
+  if (!confirm("Disconnect Google Calendar? Existing bookings stay in SancharAI, " +
+               "but new ones will no longer appear in Google.")) return;
+  const d = await post("/api/google/disconnect");
+  if (d.ok) location.reload(); else toast(d.detail, "bad");
+}
+
+async function testAi(btn) {
+  const out = document.getElementById("ai-test");
+  out.textContent = "Testing…";
+  out.className = "";
+  await action(btn, "Testing…", async () => {
+    const d = await post("/api/test-ai", formValues([
+      "ai_provider", "groq_api_key", "groq_model",
+      "ollama_host", "ollama_model", "openai_api_key", "openai_model",
+      "nvidia_api_key", "nvidia_model",
+    ]));
+    out.textContent = (d.ok ? "✓ " : "✗ ") + d.detail;
+    out.className = d.ok ? "ok" : "bad";
+  });
+}
+
+async function testTwilio(btn) {
+  const out = document.getElementById("twilio-test");
+  out.textContent = "Testing…";
+  out.className = "";
+  await action(btn, "Testing…", async () => {
+    const d = await post("/api/test-twilio",
+                         formValues(["twilio_account_sid", "twilio_auth_token"]));
+    out.textContent = (d.ok ? "✓ " : "✗ ") + d.detail;
+    out.className = d.ok ? "ok" : "bad";
+  });
+}
+
+async function testPlivo(btn) {
+  const out = document.getElementById("plivo-test");
+  out.textContent = "Testing…";
+  out.className = "";
+  await action(btn, "Testing…", async () => {
+    const d = await post("/api/test-plivo",
+                         formValues(["plivo_auth_id", "plivo_auth_token"]));
+    out.textContent = (d.ok ? "✓ " : "✗ ") + d.detail;
+    out.className = d.ok ? "ok" : "bad";
+  });
+}
+
+async function changePassword(btn) {
+  const cur = document.getElementById("pw-current");
+  const nw = document.getElementById("pw-new");
+  const out = document.getElementById("pw-status");
+  out.textContent = "";
+  out.className = "";
+
+  if (!cur.value || !nw.value) {
+    out.textContent = "Fill in both fields.";
+    out.className = "bad";
+    return;
+  }
+
+  await action(btn, "Updating…", async () => {
+    const d = await post("/api/change-password", {
+      current_password: cur.value,
+      new_password: nw.value,
+    });
+    out.textContent = (d.ok ? "✓ " : "✗ ") + d.detail;
+    out.className = d.ok ? "ok" : "bad";
+    if (d.ok) { cur.value = ""; nw.value = ""; }
+  });
+}
+</script>
+{% endblock %}

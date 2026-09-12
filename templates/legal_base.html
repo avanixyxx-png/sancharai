@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>{% block title %}Legal{% endblock %} — SancharAI</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link rel="stylesheet" href="/static/app.css"/>
+<style>
+  .legal-nav {
+    position: sticky; top: 0; z-index: 10; background: rgba(5,5,10,.85);
+    backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+    border-bottom: 1px solid var(--border); padding: 14px 24px;
+  }
+  .legal-nav .inner { max-width: 760px; margin: 0 auto; display: flex; align-items: center; gap: 16px; }
+  .legal-nav .brand { border: none; padding: 0; font-size: 18px; }
+  .legal-nav .back { margin-left: auto; font-size: 13px; color: var(--muted); }
+  .legal-nav .back:hover { color: var(--text); }
+  .legal-wrap { max-width: 760px; margin: 0 auto; padding: 48px 24px 90px; }
+  .legal-wrap h1 {
+    font-family: var(--display); font-weight: 800; font-size: 32px;
+    letter-spacing: -0.03em; margin-bottom: 6px;
+  }
+  .legal-updated { font-size: 12.5px; color: var(--hint); font-family: var(--mono); margin-bottom: 36px; }
+  .legal-wrap h2 {
+    font-family: var(--display); font-weight: 700; font-size: 19px;
+    letter-spacing: -0.02em; margin: 34px 0 12px;
+  }
+  .legal-wrap p, .legal-wrap li { font-size: 14.5px; line-height: 1.75; color: rgba(255,255,255,.82); }
+  .legal-wrap p { margin-bottom: 14px; }
+  .legal-wrap ul { margin: 10px 0 16px 20px; }
+  .legal-wrap li { margin-bottom: 6px; }
+  .legal-wrap a { color: var(--primary); }
+  .legal-note {
+    background: var(--surface); border: 1px solid var(--border-2); border-radius: 10px;
+    padding: 14px 18px; font-size: 13px; color: var(--muted); margin: 24px 0 34px; line-height: 1.6;
+  }
+  .legal-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 34px; }
+  .legal-tabs a {
+    font-size: 12.5px; padding: 6px 13px; border-radius: 100px;
+    border: 1px solid var(--border-2); color: var(--muted);
+  }
+  .legal-tabs a.on { color: var(--primary); border-color: rgba(0,229,255,.5); background: var(--primary-dim); }
+</style>
+</head>
+<body>
+<nav class="legal-nav">
+  <div class="inner">
+    <a href="/" class="brand"><span class="brand-mark">◉</span>Sanchar<span class="accent">AI</span></a>
+    <a href="/" class="back">← Back to site</a>
+  </div>
+</nav>
+<div class="legal-wrap">
+  <div class="legal-tabs">
+    <a href="/legal/terms" class="{{ 'on' if page == 'terms' }}">Terms &amp; Conditions</a>
+    <a href="/legal/privacy" class="{{ 'on' if page == 'privacy' }}">Privacy Policy</a>
+    <a href="/legal/refund" class="{{ 'on' if page == 'refund' }}">Cancellation &amp; Refund</a>
+  </div>
+  {% block content %}{% endblock %}
+</div>
+</body>
+</html>

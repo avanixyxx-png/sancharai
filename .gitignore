@@ -1,0 +1,28 @@
+# Encryption + signing keys. v1 shipped secret.key inside the project folder,
+# which meant anyone with a copy of the repo could decrypt every stored Twilio
+# token and forge a login cookie for any user. Never commit this.
+secret.key
+
+# The database holds customer phone numbers and call transcripts.
+*.db
+*.db-*
+*.db.bak*
+*.bak
+*.backup
+*.db-journal
+*.sqlite3
+
+# Real credentials
+.env
+
+# Scheduler instance lock
+.scheduler.lock
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.log
+.DS_Store
+.idea/
+.vscode/

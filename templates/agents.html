@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}AI Agents{% endblock %}
+{% block heading %}AI Agents{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-head">
+    <div class="card-title">Your agents</div>
+    <span class="mono">{{ agents|length }} of {{ usage.plan.max_agents }} on {{ usage.plan.name }}</span>
+  </div>
+  {% if agents %}
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Name</th><th>Greeting</th><th>Voice</th><th>Language</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      {% for a in agents %}
+      <tr id="agent-{{ a.id }}">
+        <td style="font-weight:600">{{ a.name }}</td>
+        <td style="color:var(--muted);max-width:320px">{{ a.greeting }}</td>
+        <td class="mono">{{ a.voice }}</td>
+        <td class="mono">{{ a.speech_language }}</td>
+        <td><span class="tag {{ 't-good' if a.active else 't-idle' }}">
+          {{ 'Active' if a.active else 'Paused' }}</span></td>
+        <td style="text-align:right;white-space:nowrap">
+          <button class="btn btn-ghost btn-sm" onclick="toggleAgent(this, {{ a.id }})">
+            {{ 'Pause' if a.active else 'Activate' }}</button>
+          <button class="btn btn-danger btn-sm" onclick="removeAgent(this, {{ a.id }})">Delete</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <div class="empty">No agents yet — create your first one below.</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="card-head"><div class="card-title">Create an agent</div></div>
+  <div class="card-body">
+    <p class="note" style="margin:0 0 8px">
+      An agent is a reusable persona — voice, language, and personality — that any
+      campaign can use. Define it once instead of repeating it per campaign.
+    </p>
+    <div class="grid c2">
+      <div><label>Agent name</label>
+        <input id="a-name" placeholder="e.g. Priya — Sales"/></div>
+      <div><label>Voice</label>
+        <select id="a-voice">
+          <option value="Polly.Aditi">Priya — Hindi/Indian English female</option>
+          <option value="Google.gu-IN-Standard-A">Meera — Gujarati female</option>
+          <option value="Google.gu-IN-Standard-B">Jignesh — Gujarati male</option>
+          <option value="Polly.Joanna">Sarah — English female</option>
+          <option value="Polly.Matthew">Raj — English male</option>
+        </select></div>
+    </div>
+    <div class="grid c2">
+      <div><label>Language the customer speaks</label>
+        <select id="a-lang">
+          <option value="en-IN">English (India)</option>
+          <option value="hi-IN">Hindi</option>
+          <option value="gu-IN">Gujarati</option>
+          <option value="mr-IN">Marathi</option>
+          <option value="ta-IN">Tamil</option>
+          <option value="te-IN">Telugu</option>
+          <option value="bn-IN">Bengali</option>
+        </select></div>
+      <div><label>Opening line</label>
+        <input id="a-greeting" placeholder="Hi {name}, this is Priya from…"/></div>
+    </div>
+    <label>Personality &amp; instructions</label>
+    <textarea id="a-prompt" placeholder="e.g. Be warm and concise. Never promise discounts above 10%."></textarea>
+    <div class="note">Use <span class="mono">{name}</span> or any CSV column as a placeholder.</div>
+    <button class="btn btn-primary" style="margin-top:18px" onclick="createAgent(this)">Create agent</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function createAgent(btn) {
+  const name = document.getElementById("a-name").value.trim();
+  if (!name) { toast("Give the agent a name.", "bad"); return; }
+
+  await action(btn, "Creating…", async () => {
+    const d = await post("/api/agent", {
+      name,
+      greeting: document.getElementById("a-greeting").value,
+      system_prompt: document.getElementById("a-prompt").value,
+      voice: document.getElementById("a-voice").value,
+      speech_language: document.getElementById("a-lang").value,
+    });
+    if (d.ok) { toast("Agent created.", "good"); location.reload(); }
+    else toast(d.detail, "bad");
+  });
+}
+
+async function toggleAgent(btn, id) {
+  const d = await post(`/api/agent/${id}/toggle`);
+  if (d.ok) location.reload(); else toast(d.detail, "bad");
+}
+
+async function removeAgent(btn, id) {
+  if (!confirm("Delete this agent? Campaigns using it keep their own copy of the script.")) return;
+  const d = await post(`/api/agent/${id}/delete`);
+  if (d.ok) document.getElementById("agent-" + id)?.remove();
+  else toast(d.detail, "bad");
+}
+</script>
+{% endblock %}

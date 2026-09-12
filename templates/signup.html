@@ -1,0 +1,62 @@
+{% extends "auth_base.html" %}
+{% block title %}Create account{% endblock %}
+
+{% block content %}
+<h1>Create your workspace</h1>
+<div class="sub">Start with 30 free agent minutes. No card required.</div>
+
+{% if error %}<div class="alert">{{ error }}</div>{% endif %}
+
+<form method="post" action="/signup">
+  <label>I'm signing up as</label>
+  <div class="seg">
+    <label>
+      <input type="radio" name="account_type" value="enterprise"
+             {{ 'checked' if account_type != 'individual' else '' }}
+             onchange="toggleCompany()"/>
+      <span>A business</span>
+    </label>
+    <label>
+      <input type="radio" name="account_type" value="individual"
+             {{ 'checked' if account_type == 'individual' else '' }}
+             onchange="toggleCompany()"/>
+      <span>An individual</span>
+    </label>
+  </div>
+
+  <div id="company-field">
+    <label>Company name</label>
+    <input name="company_name" value="{{ company_name or '' }}" placeholder="Your business name"/>
+    <div class="note">This is what customers hear the agent say.</div>
+  </div>
+
+  <label>Email address</label>
+  <input name="email" type="email" required value="{{ email or '' }}" placeholder="you@company.com"/>
+
+  <label>Password</label>
+  <input name="password" type="password" required minlength="8" placeholder="At least 8 characters"/>
+
+  <button class="btn btn-primary">Create account</button>
+  <div class="note" style="text-align:center;margin-top:14px">
+    By creating an account you agree to our
+    <a href="/legal/terms" style="color:var(--primary)">Terms</a> and
+    <a href="/legal/privacy" style="color:var(--primary)">Privacy Policy</a>.
+  </div>
+</form>
+
+<script>
+function toggleCompany() {
+  const isIndividual = document.querySelector('input[name="account_type"]:checked').value === "individual";
+  const field = document.getElementById("company-field");
+  // Individuals get a workspace named after their email, so the field is optional.
+  field.style.display = isIndividual ? "none" : "block";
+}
+toggleCompany();
+</script>
+{% endblock %}
+
+{% block foot %}
+<div class="auth-foot">
+  Already have an account? <a href="/login">Sign in</a>
+</div>
+{% endblock %}

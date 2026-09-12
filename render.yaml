@@ -1,0 +1,66 @@
+# Render blueprint. Commit this and Render can create the service from it.
+#
+# IMPORTANT: this uses a PAID plan with a persistent disk on purpose.
+# On Render's free plan the service sleeps after 15 minutes (the campaign
+# scheduler stops dialling, and Twilio's webhook times out mid-call while the
+# service cold-starts, so the customer hears "an application error has
+# occurred"), and free services get no disk, so the SQLite database is wiped on
+# every deploy.
+
+services:
+  - type: web
+    name: sancharai
+    runtime: python
+    plan: starter                 # free will not work - see note above
+    region: singapore             # closest Render region to India
+    buildCommand: pip install -r requirements.txt
+    startCommand: python run.py
+    healthCheckPath: /health
+
+    # The scheduler must run in exactly one process. More than one and every
+    # contact gets dialled once per instance.
+    numInstances: 1
+
+    disk:
+      name: sancharai-data
+      mountPath: /data
+      sizeGB: 1                   # ~1.7 million calls; see README
+
+    envVars:
+      - key: SANCHARAI_ENV
+        value: production         # makes preflight.py refuse unsafe config
+      - key: SANCHARAI_DB
+        value: /data/sancharai.db # on the persistent disk, NOT the app filesystem
+      - key: PORT
+        value: 10000              # Render's default web port
+
+      # Generated once by Render and then kept. Losing FERNET_KEY makes every
+      # stored Twilio/AI credential permanently undecryptable, so never rotate
+      # it casually.
+      - key: FERNET_KEY
+        generateValue: true
+      - key: SESSION_SECRET
+        generateValue: true
+
+      # Must be set by hand in the Render dashboard.
+      - key: PUBLIC_BASE_URL
+        sync: false               # https://your-service.onrender.com
+      - key: PLATFORM_ADMINS
+        sync: false               # who can see /admin (every tenant's data)
+      - key: BREVO_API_KEY
+        sync: false               # without it, nobody can verify or reset
+      - key: MAIL_FROM
+        sync: false
+      - key: RAZORPAY_KEY_ID
+        sync: false               # without it, nobody can pay you
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+
+      # Google Calendar sync. Optional - without these the booking features
+      # still work, they just don't mirror appointments into Google.
+      # The OAuth redirect URI registered in Google Cloud must match
+      # PUBLIC_BASE_URL exactly, or the consent screen rejects the callback.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false

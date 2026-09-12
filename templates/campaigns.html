@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+{% block title %}Campaigns{% endblock %}
+{% block heading %}Campaigns{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-head">
+    <div class="card-title">Your campaigns</div>
+    <span class="mono">{{ campaigns|length }} of {{ usage.plan.max_campaigns }} on {{ usage.plan.name }}</span>
+  </div>
+  {% if campaigns %}
+  <div class="table-scroll">
+  <table>
+    <thead><tr>
+      <th>Name</th><th>Type</th><th>Window ({{ company.timezone }})</th>
+      <th>Queue</th><th>Status</th><th></th>
+    </tr></thead>
+    <tbody>
+      {% for c in campaigns %}
+      <tr id="camp-{{ c.id }}">
+        <td style="font-weight:600">{{ c.name }}
+          <div class="mono" style="font-size:10px">{{ c.speech_language }}{{ ' (auto-switch)' if c.auto_language_switch }} · {{ c.retry_policy }}</div></td>
+        <td class="mono">{{ c.campaign_type }}</td>
+        <td class="mono">{{ c.call_window_start }}–{{ c.call_window_end }}
+          <div style="font-size:10px;color:var(--hint)">max {{ c.max_calls_per_day }}/day</div></td>
+        <td class="mono">{{ pending.get(c.id, 0) }} pending</td>
+        <td>
+          {% set cls = {'running':'t-good','paused':'t-bad','completed':'t-mid'}.get(c.status,'t-idle') %}
+          <span class="tag {{ cls }}">{{ c.status }}</span>
+          {% if c.pause_reason %}
+          <div class="note" style="margin-top:4px;max-width:200px">{{ c.pause_reason }}</div>
+          {% endif %}
+        </td>
+        <td style="text-align:right;white-space:nowrap">
+          {% if c.status == 'running' %}
+          <button class="btn btn-ghost btn-sm" onclick="campAction(this,{{ c.id }},'pause')">Pause</button>
+          {% else %}
+          <button class="btn btn-primary btn-sm" onclick="campAction(this,{{ c.id }},'start')">Start</button>
+          {% endif %}
+          <button class="btn btn-ghost btn-sm" onclick="editCampaign({{ c.id }})">Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="campAction(this,{{ c.id }},'delete')">Delete</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <div class="empty">No campaigns yet — create one below, then upload contacts.</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="card-head"><div class="card-title" id="form-title">Create a campaign</div></div>
+  <div class="card-body">
+    <div class="grid c2">
+      <div><label>Campaign name</label>
+        <input id="c-name" placeholder="e.g. October Offer"/></div>
+      <div><label>Campaign type</label>
+        <select id="c-type">
+          <option>Sales &amp; Lead Gen</option>
+          <option>Customer Support</option>
+          <option>Appointment Reminder</option>
+        </select></div>
+    </div>
+    <div class="grid c2">
+      <div><label>Use a saved agent</label>
+        <select id="c-agent">
+          <option value="0">— none, configure below —</option>
+          {% for a in agents %}
+          <option value="{{ a.id }}">{{ a.name }} — {{ a.speech_language }}</option>
+          {% endfor %}
+        </select>
+        <div class="note">
+          Picking one uses its greeting, voice and language, and ignores the
+          settings below.
+        </div></div>
+    </div>
+
+    <div class="grid c2">
+      <div><label>Agent voice</label>
+        <select id="c-voice">
+          <optgroup label="Speaks all 7 languages (recommended)">
+            <option value="Aoede|Aoede">Aoede — female</option>
+            <option value="Kore|Kore">Kore — female</option>
+            <option value="Leda|Leda">Leda — female</option>
+            <option value="Zephyr|Zephyr">Zephyr — female</option>
+            <option value="Charon|Charon">Charon — male</option>
+            <option value="Fenrir|Fenrir">Fenrir — male</option>
+            <option value="Orus|Orus">Orus — male</option>
+            <option value="Puck|Puck">Puck — male</option>
+          </optgroup>
+          <optgroup label="Single language only">
+            <option value="Polly.Aditi|Priya">Priya — Hindi/Indian English female</option>
+            <option value="Google.gu-IN-Standard-A|Meera">Meera — Gujarati female</option>
+            <option value="Google.gu-IN-Standard-B|Jignesh">Jignesh — Gujarati male</option>
+            <option value="Polly.Joanna|Sarah">Sarah — English female</option>
+            <option value="Polly.Matthew|Raj">Raj — English male</option>
+          </optgroup>
+        </select>
+        <div class="note">
+          Only the top group follows a mid-call language switch — a single-language
+          voice will keep its own accent if the customer changes language.
+        </div></div>
+      <div><label>Language the customer speaks</label>
+        <select id="c-lang">
+          <option value="en-IN">English (India)</option>
+          <option value="hi-IN">Hindi</option>
+          <option value="gu-IN">Gujarati</option>
+          <option value="mr-IN">Marathi</option>
+          <option value="ta-IN">Tamil</option>
+          <option value="te-IN">Telugu</option>
+          <option value="bn-IN">Bengali</option>
+        </select></div>
+    </div>
+
+    <label style="display:flex;align-items:center;gap:10px;margin:14px 0 6px">
+      <input type="checkbox" id="c-ask" style="width:auto"/>
+      <span>Ask the customer which language they prefer, before starting</span>
+    </label>
+    <div class="note" style="margin-top:0">
+      The agent opens with “Which language would you prefer? Hindi, English,
+      Gujarati…”, then continues in whatever they choose. More reliable than
+      guessing — without it, the first sentence is transcribed using the language
+      picked above and comes back garbled if they answer in a different one.
+    </div>
+
+    <label style="display:flex;align-items:center;gap:10px;margin:14px 0 6px">
+      <input type="checkbox" id="c-switch" style="width:auto"/>
+      <span>Let the agent follow the customer to another language mid-call</span>
+    </label>
+    <div class="note" style="margin-top:0">
+      Off by default: speech recognition is more accurate when it's told in advance
+      which language to expect. Turn this on if your customers commonly switch
+      between languages (e.g. start in Hindi, ask a question in English) — the agent
+      will match them turn by turn instead of staying fixed on the language above.
+    </div>
+
+    <label>What should the agent achieve?</label>
+    <textarea id="c-script" placeholder="e.g. Ask how they liked their recent order and whether they'd reorder."></textarea>
+
+    <div class="grid c2">
+      <div><label>Call window start</label><input id="c-start" type="time" value="09:00"/></div>
+      <div><label>Call window end</label><input id="c-end" type="time" value="20:00"/></div>
+    </div>
+    <div class="note" style="margin-top:-6px">
+      Evaluated in your workspace timezone — <b>{{ company.timezone }}</b>. Change it in Settings.
+    </div>
+
+    <div class="grid c2">
+      <div><label>Max calls per day</label><input id="c-max" type="number" value="500" min="1"/></div>
+      <div><label>Retry failed calls</label>
+        <select id="c-retry">
+          <option>No retry</option>
+          <option>After 2 hours</option>
+          <option>After 4 hours</option>
+          <option>Next day</option>
+        </select></div>
+    </div>
+
+    <button class="btn btn-primary" id="save-btn" style="margin-top:20px"
+            onclick="createCampaign(this)">Create campaign</button>
+    <button class="btn btn-ghost" id="cancel-edit" style="margin-top:20px;display:none"
+            onclick="cancelEdit()">Cancel</button>
+    <div class="note">
+      After creating it, upload your contact list under
+      <a href="/contacts" style="color:var(--primary)">Contacts &amp; CSV</a>, then press Start.
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Editing reuses the create form rather than duplicating it - one set of
+// fields to keep correct, and the two flows can never drift apart.
+const CAMPAIGNS = {{ campaigns_json | safe }};
+let editingId = null;
+
+function editCampaign(id) {
+  const c = CAMPAIGNS.find(x => x.id === id);
+  if (!c) return;
+  editingId = id;
+
+  document.getElementById("c-name").value = c.name;
+  document.getElementById("c-type").value = c.campaign_type;
+  document.getElementById("c-script").value = c.script;
+  document.getElementById("c-lang").value = c.speech_language;
+  document.getElementById("c-start").value = c.call_window_start;
+  document.getElementById("c-end").value = c.call_window_end;
+  document.getElementById("c-max").value = c.max_calls_per_day;
+  document.getElementById("c-retry").value = c.retry_policy;
+  document.getElementById("c-switch").checked = c.auto_language_switch;
+  document.getElementById("c-ask").checked = c.ask_language;
+  document.getElementById("c-agent").value = c.agent_id || "0";
+  for (const opt of document.getElementById("c-voice").options) {
+    if (opt.value.split("|")[0] === c.voice) { opt.selected = true; break; }
+  }
+
+  document.getElementById("form-title").textContent = "Edit campaign";
+  document.getElementById("save-btn").textContent = "Save changes";
+  document.getElementById("cancel-edit").style.display = "inline-block";
+  document.getElementById("c-name").scrollIntoView({behavior: "smooth", block: "center"});
+}
+
+function cancelEdit() {
+  editingId = null;
+  document.querySelectorAll("#c-name,#c-script").forEach(el => el.value = "");
+  document.getElementById("c-switch").checked = false;
+  document.getElementById("c-ask").checked = false;
+  document.getElementById("form-title").textContent = "Create a campaign";
+  document.getElementById("save-btn").textContent = "Create campaign";
+  document.getElementById("cancel-edit").style.display = "none";
+}
+
+async function createCampaign(btn) {
+  const name = document.getElementById("c-name").value.trim();
+  if (!name) { toast("Give the campaign a name.", "bad"); return; }
+
+  await action(btn, editingId ? "Saving…" : "Creating…", async () => {
+    const d = await post(editingId ? `/api/campaign/${editingId}/edit` : "/api/campaign", {
+      name,
+      campaign_type: document.getElementById("c-type").value,
+      script: document.getElementById("c-script").value,
+      voice: document.getElementById("c-voice").value,
+      speech_language: document.getElementById("c-lang").value,
+      call_window_start: document.getElementById("c-start").value,
+      call_window_end: document.getElementById("c-end").value,
+      max_calls_per_day: document.getElementById("c-max").value || "500",
+      retry_policy: document.getElementById("c-retry").value,
+      auto_language_switch: document.getElementById("c-switch").checked ? "1" : "",
+      ask_language: document.getElementById("c-ask").checked ? "1" : "",
+      agent_id: document.getElementById("c-agent").value,
+    });
+    if (d.ok) { toast(editingId ? "Campaign updated." : "Campaign created — now add contacts.", "good"); location.reload(); }
+    else toast(d.detail, "bad");
+  });
+}
+
+async function campAction(btn, id, what) {
+  if (what === "delete" && !confirm("Delete this campaign and its queued contacts?")) return;
+
+  await action(btn, "…", async () => {
+    const d = await post(`/api/campaign/${id}/${what}`);
+    if (!d.ok) { toast(d.detail, "bad"); return; }
+    if (what === "delete") { document.getElementById("camp-" + id)?.remove(); return; }
+    toast(d.detail || `Campaign ${d.status}.`, "good");
+    setTimeout(() => location.reload(), 1200);
+  });
+}
+</script>
+{% endblock %}

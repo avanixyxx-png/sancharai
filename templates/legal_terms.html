@@ -1,0 +1,96 @@
+{% extends "legal_base.html" %}
+{% block title %}Terms & Conditions{% endblock %}
+{% block content %}
+<h1>Terms &amp; Conditions</h1>
+<div class="legal-updated">Draft — last edited {{ today }}</div>
+
+<div class="legal-note">
+  <b>This is a starting draft, not legal advice.</b> It was written to accurately describe
+  what this product actually does — who it bills, what data it stores, which third
+  parties it uses — but a document a real business relies on to take payment and
+  handle customer phone data should be reviewed by a lawyer qualified in your
+  jurisdiction before you rely on it.
+</div>
+
+<h2>1. What this agreement covers</h2>
+<p>
+  These terms govern your use of SancharAI ("the Service"), a platform that lets you
+  configure AI voice agents to place and receive phone calls using your own Twilio
+  account and your own AI provider (Groq, Ollama, or OpenAI). By creating an account
+  you agree to these terms and to our <a href="/legal/privacy">Privacy Policy</a>.
+</p>
+
+<h2>2. Your own accounts, your own costs</h2>
+<p>
+  You connect your own Twilio account for telephony and your own AI provider key.
+  Call charges and AI usage are billed to you directly by those providers, on their
+  own terms and pricing — SancharAI is not a party to those charges and does not
+  mark them up. SancharAI's own fee is limited to the plan you subscribe to, billed
+  in agent-minutes as described on the <a href="/#pricing">pricing page</a>.
+</p>
+
+<h2>3. Lawful use of calling</h2>
+<p>You are responsible for ensuring every call you place complies with applicable law, including:</p>
+<ul>
+  <li>Do-not-call and do-not-disturb registries in your jurisdiction</li>
+  <li>Permitted calling hours for commercial/marketing calls</li>
+  <li>Consent requirements for automated or AI-assisted calling</li>
+  <li>Disclosure requirements where call recording or AI use must be announced to the recipient</li>
+</ul>
+<p>
+  The call-window and daily-cap controls in Campaigns are provided to help you stay
+  within calling-hours rules, but they do not by themselves guarantee compliance —
+  you are responsible for configuring them correctly for your jurisdiction and
+  audience, and for any consent or disclosure obligations that apply on top of them.
+</p>
+
+<h2>4. Account responsibilities</h2>
+<p>
+  You are responsible for the accuracy of the contact lists you upload and for having
+  a lawful basis to call each number on them. You are responsible for keeping your
+  login credentials and connected API keys confidential. Team members you invite act
+  under your company's account and your company is responsible for their use of it.
+</p>
+
+<h2>5. Subscription, billing, and plan limits</h2>
+<p>
+  Plans are billed monthly in advance. Minute and agent limits reset at the start of
+  each billing period as described on the pricing page. Exceeding your plan's minute
+  allowance pauses further AI-agent minutes until you upgrade or the period resets —
+  it does not generate an overage charge without your action. See the
+  <a href="/legal/refund">Cancellation &amp; Refund Policy</a> for how cancellation works.
+</p>
+
+<h2>6. Service availability</h2>
+<p>
+  The Service is provided "as is." We aim for high availability but do not guarantee
+  the Service will be uninterrupted or error-free. Call quality and AI response
+  latency also depend on your chosen Twilio route and AI provider, which are outside
+  our control.
+</p>
+
+<h2>7. Termination</h2>
+<p>
+  You may delete your account at any time from Settings, which permanently removes
+  your company's data as described in the Privacy Policy. We may suspend or terminate
+  an account that violates these terms, in particular unlawful or non-consensual
+  calling.
+</p>
+
+<h2>8. Limitation of liability</h2>
+<p>
+  To the maximum extent permitted by law, SancharAI is not liable for indirect,
+  incidental, or consequential damages arising from your use of the Service,
+  including damages arising from calls placed through your connected Twilio account
+  or from the AI provider you configured.
+</p>
+
+<h2>9. Changes to these terms</h2>
+<p>
+  We may update these terms from time to time. Material changes will be reflected by
+  updating the date at the top of this page.
+</p>
+
+<h2>10. Contact</h2>
+<p>Questions about these terms can be sent to the contact address on your account.</p>
+{% endblock %}

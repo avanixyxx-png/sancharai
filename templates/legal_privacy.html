@@ -1,0 +1,79 @@
+{% extends "legal_base.html" %}
+{% block title %}Privacy Policy{% endblock %}
+{% block content %}
+<h1>Privacy Policy</h1>
+<div class="legal-updated">Draft — last edited {{ today }}</div>
+
+<div class="legal-note">
+  <b>This is a starting draft, not legal advice.</b> It describes what this codebase
+  actually stores and who it shares data with, so a reviewing lawyer has an accurate
+  starting point — but it has not been reviewed against DPDP, GDPR, or any other
+  specific privacy law, and should be before you rely on it.
+</div>
+
+<h2>1. What we store</h2>
+<p>For each company workspace, the Service stores:</p>
+<ul>
+  <li><b>Account data</b> — email address, a bcrypt hash of your password (never the password itself), and your workspace name</li>
+  <li><b>Connected credentials</b> — your Twilio and AI provider keys, encrypted at rest (Fernet) and never displayed back to you in full once saved</li>
+  <li><b>Contacts</b> — phone numbers and any other columns you upload in a CSV (name, order details, etc.)</li>
+  <li><b>Call records</b> — the phone number called, call duration, an AI-generated summary and outcome classification, and the full conversation transcript</li>
+  <li><b>Configuration</b> — your agents, campaigns, FAQs, and settings</li>
+</ul>
+
+<h2>2. Who we share it with</h2>
+<p>
+  Data is shared only with the third-party services you have configured, to make the
+  Service work:
+</p>
+<ul>
+  <li><b>Twilio</b> — placing and receiving calls. Twilio processes the audio of each call.</li>
+  <li><b>Your chosen AI provider</b> (Groq, OpenAI, or your own Ollama server) — receives the conversation transcript to generate replies and classify outcomes. If you use Ollama on your own server, this data never leaves your infrastructure.</li>
+  <li><b>Brevo</b> — sends account emails (verification, password reset, team invites), only if configured.</li>
+  <li><b>Razorpay</b> — processes plan payments, only if configured.</li>
+</ul>
+<p>We do not sell contact lists, call transcripts, or account data to third parties.</p>
+
+<h2>3. Multi-tenancy and data isolation</h2>
+<p>
+  Every record is scoped to your company workspace. The application enforces this on
+  every request — one workspace's data is never returned in another workspace's
+  queries, invoices, exports, or dashboards.
+</p>
+
+<h2>4. How long we keep data</h2>
+<p>
+  Call records, contacts, and configuration are kept for as long as your account
+  exists. Deleting your account from Settings permanently removes every record tied
+  to your company — agents, campaigns, contacts, calls, transcripts, invoices, and
+  stored credentials — with no recovery period. This action cannot be undone.
+</p>
+
+<h2>5. Team members</h2>
+<p>
+  When you invite a team member, they can see the same company data you can — calls,
+  contacts, campaigns, and billing history for your workspace. Only the workspace
+  owner can change the subscription plan, remove members, or delete the account.
+</p>
+
+<h2>6. Security measures</h2>
+<ul>
+  <li>Third-party API keys (Twilio, Groq, OpenAI) are encrypted at rest and only decrypted server-side when placing a call</li>
+  <li>Passwords are hashed with bcrypt, never stored or logged in plain text</li>
+  <li>Sessions are signed cookies; login and password-reset links expire</li>
+  <li>Incoming Twilio webhooks are verified against Twilio's signature before being acted on</li>
+</ul>
+
+<h2>7. Your rights</h2>
+<p>
+  You can view and correct your account data from Settings at any time. You can
+  export your call history as a CSV from Call History. You can permanently delete
+  your account and all associated data from Settings.
+</p>
+
+<h2>8. Changes to this policy</h2>
+<p>We may update this policy from time to time. Material changes will be reflected by updating the date at the top of this page.</p>
+
+<h2>9. Contact</h2>
+<p>Questions about this policy can be sent to the contact address on your account.</p>
+{% endblock %}

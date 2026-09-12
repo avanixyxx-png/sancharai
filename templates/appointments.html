@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Appointments{% endblock %}
+{% block heading %}Appointments{% endblock %}
+
+{% block content %}
+<div class="grid c3">
+  <div class="metric">
+    <div class="metric-label">Upcoming</div>
+    <div class="metric-val" style="color:var(--primary)">{{ upcoming }}</div>
+    <div class="metric-sub">still to happen</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">Total booked</div>
+    <div class="metric-val">{{ appts|length }}</div>
+    <div class="metric-sub">all time</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">Slot length</div>
+    <div class="metric-val" style="font-size:24px">{{ settings.booking_slot_minutes }} min</div>
+    <div class="metric-sub">{{ settings.booking_open }}–{{ settings.booking_close }} · {{ company.timezone }}</div>
+  </div>
+</div>
+
+{% if not settings.booking_enabled %}
+<div class="banner amber">
+  <div style="flex:1;min-width:280px">
+    <div style="font-weight:600;font-size:14px;color:var(--amber);margin-bottom:3px">
+      Booking is switched off</div>
+    <div style="font-size:13px;color:var(--muted)">
+      The agent can't take appointments during a call yet. Turn it on in Settings,
+      under “Appointments”.
+    </div>
+  </div>
+  <a href="/settings" class="btn btn-primary">Open settings</a>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-head">
+    <div class="card-title">Diary</div>
+    <input style="width:230px;padding:7px 12px;font-size:13px"
+           placeholder="Search name or number…" oninput="filterTable('appt-table', this.value)"/>
+  </div>
+  {% if appts %}
+  <div class="table-scroll">
+  <table id="appt-table">
+    <thead><tr><th>When</th><th>Customer</th><th>Phone</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      {% for a in appts %}
+      <tr id="appt-{{ a.id }}" {% if a.past %}style="opacity:.55"{% endif %}>
+        <td class="mono">{{ a.when }}</td>
+        <td>{{ a.name }}</td>
+        <td class="mono">{{ a.phone }}</td>
+        <td>
+          {% set cls = {'booked':'t-good','cancelled':'t-bad','no_show':'t-bad',
+                        'completed':'t-mid'}.get(a.status,'t-idle') %}
+          <span class="tag {{ cls }}">{{ a.status.replace('_',' ') }}</span>
+        </td>
+        <td style="text-align:right;white-space:nowrap">
+          {% if a.status == 'booked' %}
+          <button class="btn btn-ghost btn-sm" onclick="apptAction({{ a.id }},'complete')">Done</button>
+          <button class="btn btn-ghost btn-sm" onclick="apptAction({{ a.id }},'no_show')">No show</button>
+          <button class="btn btn-danger btn-sm" onclick="apptAction({{ a.id }},'cancel')">Cancel</button>
+          {% else %}
+          <button class="btn btn-danger btn-sm" onclick="apptAction({{ a.id }},'delete')">Remove</button>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <div class="empty">
+    No appointments yet. When booking is on, the agent takes them during calls —
+    and refuses a slot that's already filled.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function apptAction(id, what) {
+  if (what === "cancel" && !confirm("Cancel this appointment? The slot becomes free again.")) return;
+  if (what === "delete" && !confirm("Remove this record permanently?")) return;
+
+  const d = await post(`/api/appointment/${id}/${what}`);
+  if (!d.ok) { toast(d.detail, "bad"); return; }
+  if (what === "delete") document.getElementById("appt-" + id)?.remove();
+  else location.reload();
+}
+</script>
+{% endblock %}

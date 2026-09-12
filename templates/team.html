@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Team{% endblock %}
+{% block heading %}Team{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-head">
+    <div class="card-title">Members</div>
+    <span class="mono">{{ members|length }} in {{ company.name }}</span>
+  </div>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Email</th><th>Role</th><th>Verified</th><th>Joined</th></tr></thead>
+    <tbody>
+      {% for m in members %}
+      <tr>
+        <td>{{ m.email }}{% if m.id == user.id %}
+          <span class="mono" style="color:var(--primary)"> (you)</span>{% endif %}</td>
+        <td><span class="tag {{ 't-mid' if m.role == 'owner' else 't-idle' }}">{{ m.role }}</span></td>
+        <td><span class="tag {{ 't-good' if m.is_verified else 't-bad' }}">
+          {{ 'yes' if m.is_verified else 'pending' }}</span></td>
+        <td class="mono">{{ m.created_at.strftime('%Y-%m-%d') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+{% if invites %}
+<div class="card">
+  <div class="card-head"><div class="card-title">Pending invitations</div></div>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Email</th><th>Role</th><th>Invited by</th><th>Sent</th><th></th></tr></thead>
+    <tbody>
+      {% for i in invites %}
+      <tr id="invite-{{ i.id }}">
+        <td>{{ i.email }}</td>
+        <td class="mono">{{ i.role }}</td>
+        <td class="mono">{{ i.invited_by }}</td>
+        <td class="mono">{{ i.created_at.strftime('%Y-%m-%d') }}</td>
+        <td style="text-align:right">
+          {% if user.role == 'owner' %}
+          <button class="btn btn-danger btn-sm" onclick="cancelInvite({{ i.id }})">Cancel</button>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+
+{% if user.role == 'owner' %}
+<div class="card">
+  <div class="card-head"><div class="card-title">Invite someone</div></div>
+  <div class="card-body">
+    <p class="note" style="margin:0 0 8px">
+      Members can run campaigns and see calls. Only owners can change the plan,
+      manage the team, or delete the workspace.
+    </p>
+    <div class="grid c2">
+      <div><label>Email address</label>
+        <input id="i-email" type="email" placeholder="colleague@company.com"/></div>
+      <div><label>Role</label>
+        <select id="i-role">
+          <option value="member">Member</option>
+          <option value="owner">Owner</option>
+        </select></div>
+    </div>
+    <button class="btn btn-primary" style="margin-top:18px" onclick="sendInvite(this)">
+      Send invitation</button>
+    <div id="invite-link" style="margin-top:14px"></div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function sendInvite(btn) {
+  const email = document.getElementById("i-email").value.trim();
+  if (!email) { toast("Enter an email address.", "bad"); return; }
+
+  await action(btn, "Sending…", async () => {
+    const d = await post("/api/team/invite", {
+      email,
+      role: document.getElementById("i-role").value,
+    });
+    if (!d.ok) { toast(d.detail, "bad"); return; }
+
+    toast(d.detail, "good");
+    // When email isn't configured the server returns the link so it can be
+    // copied and sent by hand, rather than the invite silently going nowhere.
+    document.getElementById("invite-link").innerHTML =
+      `<div class="note">Invitation link:</div><div class="codebox">${d.link}</div>`;
+  });
+}
+
+async function cancelInvite(id) {
+  const d = await post(`/api/team/invite/${id}/cancel`);
+  if (d.ok) document.getElementById("invite-" + id)?.remove();
+  else toast(d.detail, "bad");
+}
+</script>
+{% endblock %}
