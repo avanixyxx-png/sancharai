@@ -2017,11 +2017,23 @@ async def billing_upgrade(request: Request, plan: str = Form(...)):
             return _err(str(exc))
 
         if plans.razorpay_configured():
+            try:
+                order = plans.create_razorpay_order(invoice)
+            except plans.PlanLimitError as exc:
+                invoice.status = "failed"
+                db.add(invoice)
+                db.commit()
+                return _err(str(exc), 502)
+            db.add(invoice)
+            db.commit()
             return {
                 "ok": True,
                 "invoice_id": invoice.id,
                 "amount_inr": invoice.amount_inr,
                 "next": "razorpay",
+                "order_id": order["id"],
+                "key_id": os.getenv("RAZORPAY_KEY_ID", "").strip(),
+                "company_name": company.name,
                 "detail": "Complete payment to activate the plan.",
             }
         if plans.demo_upgrades_allowed():
@@ -2069,7 +2081,10 @@ async def billing_confirm(
             )
         except plans.PlanLimitError as exc:
             return _err(str(exc), 402)
-    return {"ok": True, "detail": f"Upgraded to {invoice.plan}."}
+        # Read while the session is still open - after the `with` block ends,
+        # `invoice` is detached and touching any of its columns raises.
+        upgraded_plan = invoice.plan
+    return {"ok": True, "detail": f"Upgraded to {upgraded_plan}."}
 
 
 # ============================== TEAM ==============================

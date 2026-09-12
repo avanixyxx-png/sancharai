@@ -21,6 +21,7 @@ import hmac
 import os
 from datetime import datetime, timedelta
 
+import httpx
 from sqlmodel import Session, func, select
 
 from models import Agent, Call, Campaign, Company, Invoice, utcnow
@@ -226,6 +227,53 @@ def start_upgrade(company: Company, target: str, db: Session) -> Invoice:
     return invoice
 
 
+def create_razorpay_order(invoice: Invoice) -> dict:
+    """Open an order on Razorpay's side for this invoice.
+
+    The checkout widget needs a real order_id from Razorpay itself before it
+    can open - a client-side amount would let anyone edit the DOM and pay Rs 1
+    for the Enterprise plan. invoice.id is passed as the receipt so a payment
+    can always be traced back to the invoice row that requested it, and the
+    invoice's OWN price_inr is what gets charged - never a client-supplied
+    amount.
+
+    Uses plain httpx rather than the razorpay SDK: this is the only Razorpay
+    call the app makes, and it is one POST with basic auth - not worth a new
+    dependency for. Same pattern mailer.py uses for Brevo.
+    """
+    key_id = os.getenv("RAZORPAY_KEY_ID", "").strip()
+    key_secret = os.getenv("RAZORPAY_KEY_SECRET", "").strip()
+    if not (key_id and key_secret):
+        raise PlanLimitError("Payments are not configured.")
+
+    try:
+        resp = httpx.post(
+            "https://api.razorpay.com/v1/orders",
+            auth=(key_id, key_secret),
+            json={
+                # Razorpay takes paise, not rupees.
+                "amount": invoice.amount_inr * 100,
+                "currency": "INR",
+                "receipt": f"invoice-{invoice.id}",
+                "notes": {"company_id": str(invoice.company_id), "plan": invoice.plan},
+            },
+            timeout=15.0,
+        )
+    except httpx.HTTPError as exc:
+        raise PlanLimitError(f"Could not reach Razorpay: {exc}") from exc
+
+    if resp.status_code == 401:
+        raise PlanLimitError("Razorpay rejected our credentials - check the API keys.")
+    if resp.status_code >= 400:
+        raise PlanLimitError(f"Razorpay could not create the order: {resp.text[:200]}")
+
+    order = resp.json()
+    # Stored so confirm_upgrade can check the payment came back against the
+    # SAME order this invoice opened, not one for a different invoice entirely.
+    invoice.provider_ref = order["id"]
+    return order
+
+
 def verify_razorpay_signature(order_id: str, payment_id: str, signature: str) -> bool:
     """Razorpay signs "<order_id>|<payment_id>" with your key secret.
 
@@ -271,6 +319,16 @@ def confirm_upgrade(
         raise PlanLimitError("This invoice is already paid.")
 
     if razorpay_configured():
+        # The signature alone only proves Razorpay signed SOME order+payment
+        # pair with our secret - not that it was THIS invoice's order. Without
+        # this check, a genuine signature from a cheap order (e.g. someone
+        # else's Rs 10 test payment) could be replayed against an expensive
+        # invoice and pass verify_razorpay_signature every time.
+        if not invoice.provider_ref or order_id != invoice.provider_ref:
+            invoice.status = "failed"
+            db.add(invoice)
+            db.commit()
+            raise PlanLimitError("Payment does not match this invoice. Nothing was charged.")
         if not verify_razorpay_signature(order_id, payment_id, signature):
             invoice.status = "failed"
             db.add(invoice)

@@ -115,6 +115,9 @@
 {% endblock %}
 
 {% block scripts %}
+{% if payments_live %}
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+{% endif %}
 <script>
 async function upgrade(btn, plan) {
   if (!confirm(`Change your plan to ${plan}?`)) return;
@@ -128,10 +131,55 @@ async function upgrade(btn, plan) {
       setTimeout(() => location.reload(), 1000);
       return;
     }
-    // Razorpay is configured: the checkout widget would open here and call
-    // /api/billing/confirm with the signed payment result.
+
+    if (d.next === "razorpay") {
+      openRazorpay(d);
+      return;
+    }
+
     toast(`Invoice #${d.invoice_id} created for ₹${d.amount_inr}. Complete payment to activate.`, "good");
   });
+}
+
+function openRazorpay(order) {
+  // amount here is display-only (paise, for the widget's own header) - the
+  // actual amount charged was fixed server-side from the plan's own price
+  // when the order was created, never from anything in this page.
+  const rzp = new Razorpay({
+    key: order.key_id,
+    amount: order.amount_inr * 100,
+    currency: "INR",
+    name: "SancharAI",
+    description: `Plan upgrade — ${order.company_name}`,
+    order_id: order.order_id,
+    handler: async function (resp) {
+      // Only Razorpay's own signed callback reaches here - the plan is
+      // granted by the SERVER after it re-verifies this signature, never by
+      // this handler firing.
+      const d = await post("/api/billing/confirm", {
+        invoice_id: order.invoice_id,
+        razorpay_order_id: resp.razorpay_order_id,
+        razorpay_payment_id: resp.razorpay_payment_id,
+        razorpay_signature: resp.razorpay_signature,
+      });
+      if (d.ok) {
+        toast(d.detail, "good");
+        setTimeout(() => location.reload(), 1000);
+      } else {
+        toast(d.detail, "bad");
+      }
+    },
+    modal: {
+      // Closing the widget without paying leaves a "pending" invoice sitting
+      // in the table above - not an error, just an unfinished attempt.
+      ondismiss: function () { toast("Payment cancelled.", "bad"); },
+    },
+    theme: { color: "#6b4fff" },
+  });
+  rzp.on("payment.failed", function (resp) {
+    toast(`Payment failed: ${resp.error.description || resp.error.reason}`, "bad");
+  });
+  rzp.open();
 }
 </script>
 {% endblock %}
