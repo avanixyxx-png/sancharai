@@ -27,14 +27,31 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlmodel import Field, Session, SQLModel, create_engine
 
-# Overridable so tests (and a second local instance) never share the running
-# server's database file. On Windows a live server holds sancharai.db open, so
-# a test that tries to reset it silently keeps the old rows instead.
-DB_PATH = os.getenv("SANCHARAI_DB", "sancharai.db")
-engine = create_engine(
-    f"sqlite:///{DB_PATH}",
-    connect_args={"check_same_thread": False},
-)
+# DATABASE_URL, when set, points at a real Postgres server (Supabase, Neon,
+# Render Postgres, ...) instead of the local SQLite file. This is what makes
+# the database survive a redeploy: SQLite is one file sitting on the app's own
+# disk, which most hosts (including Render's free tier) wipe on every deploy -
+# a hosted Postgres database is a completely separate, persistent service.
+# SANCHARAI_DB (the SQLite path) still works exactly as before when
+# DATABASE_URL is not set, so local development needs no Postgres account.
+_DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+
+if _DATABASE_URL:
+    # SQLAlchemy's own dialect name is "postgresql", but every host that hands
+    # out a connection string writes "postgres://" - accept both.
+    if _DATABASE_URL.startswith("postgres://"):
+        _DATABASE_URL = "postgresql://" + _DATABASE_URL[len("postgres://"):]
+    engine = create_engine(_DATABASE_URL, pool_pre_ping=True)
+else:
+    # Overridable so tests (and a second local instance) never share the
+    # running server's database file. On Windows a live server holds
+    # sancharai.db open, so a test that tries to reset it silently keeps the
+    # old rows instead.
+    DB_PATH = os.getenv("SANCHARAI_DB", "sancharai.db")
+    engine = create_engine(
+        f"sqlite:///{DB_PATH}",
+        connect_args={"check_same_thread": False},
+    )
 
 
 def utcnow() -> datetime:
@@ -539,6 +556,19 @@ def _add_missing_columns() -> None:
     tables = set(inspector.get_table_names())
     added: set[str] = set()
 
+    # The DDL strings above were written for SQLite, which happily accepts
+    # `BOOLEAN DEFAULT 0`/`1`. Postgres does not - a boolean default must be
+    # TRUE/FALSE, not an integer literal - so on Postgres every "DEFAULT 0"/"1"
+    # in a BOOLEAN column is rewritten before it reaches the server. Every
+    # other type used here (VARCHAR, INTEGER, FLOAT) is spelled the same way
+    # in both dialects and needs no translation.
+    is_postgres = engine.dialect.name == "postgresql"
+
+    def _ddl_for(ddl: str) -> str:
+        if is_postgres and ddl.startswith("BOOLEAN DEFAULT"):
+            return ddl.replace("DEFAULT 0", "DEFAULT FALSE").replace("DEFAULT 1", "DEFAULT TRUE")
+        return ddl
+
     with engine.begin() as conn:
         for table, columns in additions.items():
             if table not in tables:
@@ -546,7 +576,7 @@ def _add_missing_columns() -> None:
             present = {c["name"] for c in inspector.get_columns(table)}
             for name, ddl in columns.items():
                 if name not in present:
-                    conn.execute(text(f'ALTER TABLE "{table}" ADD COLUMN {name} {ddl}'))
+                    conn.execute(text(f'ALTER TABLE "{table}" ADD COLUMN {name} {_ddl_for(ddl)}'))
                     added.add(f"{table}.{name}")
                     print(f"[db] added column {table}.{name}", flush=True)
 
@@ -554,7 +584,7 @@ def _add_missing_columns() -> None:
         # verify, so locking them out would be wrong. Runs on migration only,
         # never on a fresh database.
         if "user.is_verified" in added:
-            conn.execute(text("UPDATE user SET is_verified = 1"))
+            conn.execute(text(f"UPDATE \"user\" SET is_verified = {'TRUE' if is_postgres else 1}"))
             print("[db] existing accounts marked verified", flush=True)
 
 

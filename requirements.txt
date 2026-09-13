@@ -7,7 +7,8 @@ uvicorn[standard]==0.51.0
 python-multipart==0.0.12          # form/file uploads
 jinja2==3.1.6                     # server-rendered templates
 
-sqlmodel==0.0.39                  # SQLite ORM (no MongoDB required)
+sqlmodel==0.0.39                  # ORM - SQLite locally, Postgres when DATABASE_URL is set
+psycopg2-binary==2.9.10           # Postgres driver (Supabase/Neon/Render Postgres)
 
 twilio==9.3.2                     # outbound calls + webhook signature validation
 plivo==4.62.0                     # alternate telephony provider (cheaper India rates)
