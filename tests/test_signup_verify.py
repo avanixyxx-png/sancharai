@@ -196,6 +196,31 @@ with patch.object(application.mailer, "send_signup_code", side_effect=fake_send)
         r = c.post("/api/signup/send-code", data={"email": "flood9@test.com"})
         check("codes are capped per network per hour", r.status_code == 429, r.text)
 
+# ------------------------------------------------ temp-mail addresses blocked
+import disposable  # noqa: E402
+
+with patch.object(application.mailer, "send_signup_code", side_effect=fake_send):
+    with TestClient(application.app) as c:
+        reset_limits()
+        before = len(sent)
+        for addr in ("biwelem251@dreameg.com", "x@mailinator.com", "y@inbox.mailinator.com"):
+            r = c.post("/api/signup/send-code", data={"email": addr})
+            check(f"temp mail refused: {addr}",
+                  r.status_code == 400 and "permanent email" in r.json().get("detail", ""), r.text)
+        check("...and no code email was sent for any of them", len(sent) == before, str(len(sent) - before))
+        check("...nor counted toward the hourly cap", application._SIGNUP_ATTEMPTS.get("testclient", []) == [])
+
+check("the blocklist actually loaded (thousands of domains)",
+      len(disposable._domains()) > 1000, str(len(disposable._domains())))
+check("gmail / business domains are still allowed",
+      not disposable.is_disposable("a@gmail.com") and not disposable.is_disposable("info@automatehubai.in"))
+try:
+    auth.prepare_signup("z@mailinator.com", "supersecret123", "X")
+    refused = False
+except auth.AuthError:
+    refused = True
+check("account creation itself also refuses temp mail (backup check)", refused)
+
 # ------------------------------------------------- Brevo not configured (dev)
 os.environ.pop("BREVO_API_KEY", None)
 with TestClient(application.app) as c:

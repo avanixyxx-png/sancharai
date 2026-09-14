@@ -44,6 +44,7 @@ from fastapi.templating import Jinja2Templates  # noqa: E402
 from sqlmodel import Session, func, select  # noqa: E402
 
 import booking  # noqa: E402
+import disposable  # noqa: E402
 import engine  # noqa: E402
 import gcal  # noqa: E402
 import mailer  # noqa: E402
@@ -407,6 +408,8 @@ async def signup_send_code(request: Request, email: str = Form(default="")):
     domain = clean.rsplit("@", 1)[-1] if "@" in clean else ""
     if not clean or "." not in domain or clean.startswith("@"):
         return _err("Enter a valid email address.")
+    if disposable.is_disposable(clean):
+        return _err("Please use a permanent email address - temporary inboxes aren't allowed.")
     with Session(db_engine) as db:
         if db.exec(select(User).where(User.email == clean)).first():
             return _err("An account with that email already exists. Sign in instead.", 409)

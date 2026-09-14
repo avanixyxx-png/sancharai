@@ -12,6 +12,7 @@ from datetime import timedelta
 from fastapi import Request
 from sqlmodel import Session, select
 
+from disposable import is_disposable
 from models import Agent, Company, CompanySettings, Invite, User, engine, utcnow
 from security import (
     SESSION_COOKIE,
@@ -68,6 +69,8 @@ def prepare_signup(
     account_type = "individual" if account_type == "individual" else "enterprise"
 
     _validate_credentials(email, password)
+    if is_disposable(email):
+        raise AuthError("Please use a permanent email address - temporary inboxes aren't allowed.")
     if account_type == "enterprise" and not company_name:
         raise AuthError("Enter your company name.")
     if account_type == "individual" and not company_name:
