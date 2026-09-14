@@ -421,8 +421,20 @@ async def signup_send_code(request: Request, email: str = Form(default="")):
         if not ok:
             print(f"[EMAIL FAILED] signup code for {clean}: {detail}", flush=True)
             return _err("We couldn't send the code. Check the address and try again.", 502)
+        print(f"[EMAIL SENT] signup code to {clean} via Brevo", flush=True)
+    elif os.getenv("SANCHARAI_ENV", "").strip().lower() == "production":
+        # Never tell a real visitor "we sent a code" when nothing was sent.
+        print(f"[EMAIL NOT CONFIGURED] signup code requested for {clean} - BREVO_API_KEY missing", flush=True)
+        return _err("Email sending isn't set up on this server yet. Please try again later.", 503)
     else:
+        # Local development without Brevo: the code goes to the server log.
         print(f"[EMAIL NOT CONFIGURED] signup code for {clean}: {code}", flush=True)
+        _SIGNUP_ATTEMPTS.setdefault(ip, []).append(time.time())
+        return {
+            "ok": True,
+            "ticket": ticket,
+            "detail": "Email isn't configured on this server - the code is printed in the server log.",
+        }
 
     # Only sent emails count toward the cap, so fixing a typo isn't punished.
     _SIGNUP_ATTEMPTS.setdefault(ip, []).append(time.time())
