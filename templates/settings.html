@@ -249,17 +249,18 @@
             <div class="note">Free at build.nvidia.com. Stored encrypted. Leave blank to keep the current one.</div></div>
           <div><label>Model</label>
             <input name="nvidia_model" value="{{ settings.nvidia_model }}"
-                   list="nvidia-models" placeholder="nvidia/nvidia-nemotron-nano-9b-v2"/>
+                   list="nvidia-models" placeholder="nvidia/nemotron-3.5-lightning-30b-a3b"/>
             <datalist id="nvidia-models">
-              <option value="nvidia/nvidia-nemotron-nano-9b-v2">
+              <option value="nvidia/nemotron-3.5-lightning-30b-a3b">
               <option value="meta/llama-3.2-3b-instruct">
               <option value="meta/llama-3.2-1b-instruct">
               <option value="nvidia/nemotron-3-super-120b-a12b">
             </datalist>
             <div class="note">
-              Any model id from build.nvidia.com works here. nemotron-nano-9b-v2 is
-              fastest for live calls; larger models (like the 120B MoE) add latency —
-              test a real call before trusting one in production.
+              Any model id from build.nvidia.com works here. nemotron-3.5-lightning is
+              built for low latency; larger models (like the 120B) can be too slow for
+              a live call. Its official languages don't include Hindi or other Indian
+              languages — for those, Groq is the safer choice. Test a real call first.
             </div></div>
         </div>
       </div>

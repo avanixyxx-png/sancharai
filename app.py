@@ -1306,7 +1306,7 @@ async def save_settings(
     openai_api_key: str = Form(default=""),
     openai_model: str = Form(default="gpt-4o-mini"),
     nvidia_api_key: str = Form(default=""),
-    nvidia_model: str = Form(default="nvidia/nvidia-nemotron-nano-9b-v2"),
+    nvidia_model: str = Form(default="nvidia/nemotron-3.5-lightning-30b-a3b"),
     stt_provider: str = Form(default="carrier"),
     deepgram_api_key: str = Form(default=""),
     company_display_name: str = Form(default=""),
@@ -1395,7 +1395,7 @@ async def save_settings(
         s.ollama_host = ollama_host.strip().rstrip("/") or "http://localhost:11434"
         s.ollama_model = ollama_model.strip() or "llama3.2"
         s.openai_model = openai_model.strip() or "gpt-4o-mini"
-        s.nvidia_model = nvidia_model.strip() or "nvidia/nvidia-nemotron-nano-9b-v2"
+        s.nvidia_model = nvidia_model.strip() or "nvidia/nemotron-3.5-lightning-30b-a3b"
         db.add(s)
 
         company.timezone = company_timezone.strip() or "Asia/Kolkata"

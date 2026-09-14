@@ -661,13 +661,22 @@ def _llm_nvidia(settings: CompanySettings, messages: list[dict], max_tokens: int
         raise RuntimeError("No NVIDIA API key configured.")
     client = OpenAI(api_key=key, base_url="https://integrate.api.nvidia.com/v1", timeout=20.0)
     resp = client.chat.completions.create(
-        model=settings.nvidia_model or "nvidia/nvidia-nemotron-nano-9b-v2",
+        model=settings.nvidia_model or "nvidia/nemotron-3.5-lightning-30b-a3b",
         messages=messages,
         temperature=0.7,
         max_tokens=max_tokens,
-        extra_body={"chat_template_kwargs": {"thinking": False}},
+        # Nemotron 2 read "thinking"; Nemotron 3 / 3.5 read "enable_thinking"
+        # and reason BY DEFAULT otherwise. Sending only the old key left every
+        # Nemotron 3 model thinking before each reply - slow enough to drop a
+        # live call. Unknown template keys are ignored, so both are sent.
+        extra_body={"chat_template_kwargs": {"thinking": False, "enable_thinking": False}},
     )
-    return (resp.choices[0].message.content or "").strip()
+    content = resp.choices[0].message.content or ""
+    # If a model reasons anyway, never read its reasoning aloud to the caller.
+    content = re.sub(r"<think>.*?</think>", "", content, flags=re.S)
+    if "</think>" in content:
+        content = content.split("</think>", 1)[1]
+    return content.strip()
 
 
 def _llm(settings: CompanySettings, messages: list[dict], max_tokens: int) -> str:

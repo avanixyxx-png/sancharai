@@ -167,7 +167,7 @@ class CompanySettings(SQLModel, table=True):
     openai_api_key_enc: str = Field(default="")
     openai_model: str = Field(default="gpt-4o-mini")
     nvidia_api_key_enc: str = Field(default="")
-    nvidia_model: str = Field(default="nvidia/nvidia-nemotron-nano-9b-v2")
+    nvidia_model: str = Field(default="nvidia/nemotron-3.5-lightning-30b-a3b")
 
     # Speech-to-text source. "carrier" is Twilio's <Gather>/Plivo's <GetInput>:
     # zero setup, but billed per turn (~Rs 1.75 each), which at three turns a
@@ -528,7 +528,7 @@ def _add_missing_columns() -> None:
             "openai_api_key_enc": "VARCHAR DEFAULT ''",
             "openai_model": "VARCHAR DEFAULT 'gpt-4o-mini'",
             "nvidia_api_key_enc": "VARCHAR DEFAULT ''",
-            "nvidia_model": "VARCHAR DEFAULT 'nvidia/nvidia-nemotron-nano-9b-v2'",
+            "nvidia_model": "VARCHAR DEFAULT 'nvidia/nemotron-3.5-lightning-30b-a3b'",
             "stt_provider": "VARCHAR DEFAULT 'carrier'",
             "deepgram_api_key_enc": "VARCHAR DEFAULT ''",
             "auto_language_switch": "BOOLEAN DEFAULT 0",
