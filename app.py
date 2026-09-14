@@ -87,10 +87,13 @@ from security import (  # noqa: E402
     encrypt,
     hash_password,
     make_invite_token,
+    check_signup_code,
+    make_email_verified_token,
     make_reset_token,
-    make_signup_token,
+    make_signup_code,
     make_verify_token,
     mask,
+    read_email_verified_token,
     read_invite_token,
     read_reset_token,
     read_signup_token,
@@ -391,6 +394,68 @@ def _signup_capped(ip: str) -> bool:
     return len(recent) >= limit
 
 
+# Wrong code guesses per ticket. Five tries on a 6-digit code is a 1-in-200,000
+# chance of guessing it before the ticket locks.
+_CODE_FAILURES: dict[str, int] = {}
+_MAX_CODE_TRIES = 5
+
+
+@app.post("/api/signup/send-code")
+async def signup_send_code(request: Request, email: str = Form(default="")):
+    """Step 1 of signup: email a 6-digit code. Creates nothing."""
+    clean = email.strip().lower()
+    domain = clean.rsplit("@", 1)[-1] if "@" in clean else ""
+    if not clean or "." not in domain or clean.startswith("@"):
+        return _err("Enter a valid email address.")
+    with Session(db_engine) as db:
+        if db.exec(select(User).where(User.email == clean)).first():
+            return _err("An account with that email already exists. Sign in instead.", 409)
+
+    ip = _signup_ip(request)
+    if _signup_capped(ip):
+        return _err("Too many codes requested from your network. Please try again in an hour.", 429)
+
+    code, ticket = make_signup_code(clean)
+    if mailer.is_configured():
+        ok, detail = mailer.send_signup_code(clean, code)
+        if not ok:
+            print(f"[EMAIL FAILED] signup code for {clean}: {detail}", flush=True)
+            return _err("We couldn't send the code. Check the address and try again.", 502)
+    else:
+        print(f"[EMAIL NOT CONFIGURED] signup code for {clean}: {code}", flush=True)
+
+    # Only sent emails count toward the cap, so fixing a typo isn't punished.
+    _SIGNUP_ATTEMPTS.setdefault(ip, []).append(time.time())
+    return {
+        "ok": True,
+        "ticket": ticket,
+        "detail": f"We sent a 6-digit code to {clean}. It expires in 10 minutes.",
+    }
+
+
+@app.post("/api/signup/verify-code")
+async def signup_verify_code(
+    email: str = Form(default=""), code: str = Form(default=""), ticket: str = Form(default="")
+):
+    """Step 2: check the code and hand back proof the email is verified."""
+    clean = email.strip().lower()
+    status, nonce = check_signup_code(ticket, clean, code)
+    if status == "expired":
+        return _err("That code has expired. Send a new one.")
+    if status == "invalid":
+        return _err("Send a code to this email first.")
+    if _CODE_FAILURES.get(nonce, 0) >= _MAX_CODE_TRIES:
+        return _err("Too many wrong attempts. Send a new code.", 429)
+    if status == "wrong":
+        _CODE_FAILURES[nonce] = _CODE_FAILURES.get(nonce, 0) + 1
+        left = _MAX_CODE_TRIES - _CODE_FAILURES[nonce]
+        if not left:
+            return _err("Too many wrong attempts. Send a new code.", 429)
+        return _err(f"Wrong code. {left} attempt{'s' if left != 1 else ''} left.")
+    _CODE_FAILURES.pop(nonce, None)
+    return {"ok": True, "verified_token": make_email_verified_token(clean), "detail": "Email verified"}
+
+
 @app.post("/signup", response_class=HTMLResponse)
 async def signup_submit(
     request: Request,
@@ -398,12 +463,15 @@ async def signup_submit(
     password: str = Form(...),
     company_name: str = Form(default=""),
     account_type: str = Form(default="enterprise"),
+    verified_token: str = Form(default=""),
 ):
-    """Validate and email a confirmation link. Creates NOTHING.
+    """Step 3: create the account - only for an email proven by the code step.
 
-    The account only exists once that link is clicked (signup_confirm), so a
-    mistyped or someone-else's address never produces an account.
+    It is created already verified, so a mistyped or someone else's address
+    can never produce an account.
     """
+    clean = email.strip().lower()
+    proven = read_email_verified_token(verified_token) == clean
 
     def form_error(message: str):
         return templates.TemplateResponse(
@@ -414,48 +482,26 @@ async def signup_submit(
                 "email": email,
                 "company_name": company_name,
                 "account_type": account_type,
+                # Keep a still-valid verification, so fixing e.g. a short
+                # password doesn't mean waiting for another code.
+                "verified_token": verified_token if proven else "",
             },
         )
 
-    ip = _signup_ip(request)
-    if _signup_capped(ip):
-        return form_error("Too many signup attempts from your network. Please try again in an hour.")
-
+    if not proven:
+        return form_error("Verify your email with the 6-digit code before creating your account.")
     try:
         clean_email, clean_company, clean_type = prepare_signup(
             email, password, company_name, account_type
         )
+        _, cookie = create_account(
+            clean_email, hash_password(password), clean_company, clean_type, verified=True
+        )
     except AuthError as exc:
         return form_error(str(exc))
-
-    token = make_signup_token(clean_email, hash_password(password), clean_company, clean_type)
-    link = f"{_public_base(request)}/signup/confirm/{token}"
-
-    if mailer.is_configured():
-        ok, detail = mailer.send_signup_confirmation(clean_email, link)
-        if not ok:
-            print(f"[EMAIL FAILED] signup confirmation for {clean_email}: {detail}", flush=True)
-            return form_error(
-                "We couldn't send the confirmation email. Check the address and try again."
-            )
-    else:
-        print(f"[EMAIL NOT CONFIGURED] signup link for {clean_email}: {link}", flush=True)
-
-    # Only sent emails count toward the cap, so fixing a typo isn't punished.
-    _SIGNUP_ATTEMPTS.setdefault(ip, []).append(time.time())
-
-    return templates.TemplateResponse(
-        "message.html",
-        {
-            "request": request,
-            "title": "Check your email",
-            "body": f"We sent a confirmation link to {clean_email}. Click it within 24 hours "
-            "to finish creating your account. Nothing is created until you do - "
-            "if you don't see it, check your spam folder.",
-            "link": "/login",
-            "link_text": "Back to sign in",
-        },
-    )
+    resp = _redirect("/settings")
+    set_session_cookie(resp, cookie)
+    return resp
 
 
 @app.get("/signup/confirm/{token}", response_class=HTMLResponse)

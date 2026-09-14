@@ -112,6 +112,24 @@ def send_verification(to_email: str, link: str) -> tuple[bool, str]:
     )
 
 
+def send_signup_code(to_email: str, code: str) -> tuple[bool, str]:
+    body = (
+        "<div style='font-size:15px;line-height:1.6'>"
+        "Use this code to verify your email and create your SancharAI account:"
+        "</div>"
+        "<div style='font-size:34px;font-weight:800;letter-spacing:10px;margin:18px 0;"
+        f"color:#00e5ff'>{code}</div>"
+        "<div style='font-size:12px;color:#8b8b9e'>"
+        "This code expires in 10 minutes. Never share it with anyone.</div>"
+    )
+    return send(
+        to_email,
+        f"{code} is your SancharAI verification code",
+        _WRAP.format(body=body),
+        f"Your SancharAI verification code is {code}. It expires in 10 minutes.",
+    )
+
+
 def send_signup_confirmation(to_email: str, link: str) -> tuple[bool, str]:
     body = (
         "<div style='font-size:15px;line-height:1.6'>"

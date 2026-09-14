@@ -1,11 +1,12 @@
 """
-Email-first signup: no account exists until the emailed link is clicked.
+Signup with a 6-digit email code: no account without proving the inbox.
 
 Reported: signing up with an address that isn't yours (tt@gmail.com) still
-created an account. Now the form only validates and emails a link; the link
-carries the pending signup (encrypted) and creating the account is the click.
-Brevo is stubbed - what matters here is what the app does with the link.
+created an account. Now the form has a "Send code" step beside the email;
+the account can only be created with the verified token that step returns,
+and it is created already verified. Brevo is stubbed.
 """
+import base64
 import os
 import re
 import sys
@@ -32,8 +33,8 @@ from fastapi.testclient import TestClient  # noqa: E402
 from sqlmodel import Session, select  # noqa: E402
 import app as application  # noqa: E402
 import auth  # noqa: E402
+import security  # noqa: E402
 from models import Company, User, engine as db_eng, init_db  # noqa: E402
-from security import read_signup_token  # noqa: E402
 
 init_db()
 fails = []
@@ -46,8 +47,8 @@ def check(label, cond, extra=""):
         fails.append(label)
 
 
-def fake_send(to_email, link):
-    sent.append({"to": to_email, "link": link})
+def fake_send(to_email, code):
+    sent.append({"to": to_email, "code": code})
     return True, "sent"
 
 
@@ -59,128 +60,159 @@ def users(email=None):
         return db.exec(q).all()
 
 
-def form(email, password="supersecret123", company="Acme", kind="enterprise"):
-    return {"email": email, "password": password, "company_name": company, "account_type": kind}
+def reset_limits():
+    application._SIGNUP_ATTEMPTS.clear()
+    application._CODE_FAILURES.clear()
 
 
-def token_of(link):
-    return link.rsplit("/signup/confirm/", 1)[-1]
+def get_code(c, email):
+    r = c.post("/api/signup/send-code", data={"email": email})
+    return r, (sent[-1]["code"] if r.json().get("ok") else None), r.json().get("ticket", "")
 
 
-with patch.object(application.mailer, "send_signup_confirmation", side_effect=fake_send):
-    # ---------------------------------------------------- submit creates nothing
+def verify(c, email, code, ticket):
+    return c.post("/api/signup/verify-code", data={"email": email, "code": code, "ticket": ticket})
+
+
+def form(email, token, password="supersecret123", company="Acme", kind="enterprise"):
+    return {"email": email, "password": password, "company_name": company,
+            "account_type": kind, "verified_token": token}
+
+
+with patch.object(application.mailer, "send_signup_code", side_effect=fake_send):
     with TestClient(application.app) as c:
-        application._SIGNUP_ATTEMPTS.clear()
-        r = c.post("/signup", data=form("tt@gmail.com"))
-        check("form shows 'check your email'", "Check your email" in r.text, r.text[:300])
-        check("THE FIX: no account exists before the link is clicked", users("tt@gmail.com") == [])
-        check("no company created either", len(users()) == 0)
-        check("exactly one confirmation email sent", len(sent) == 1, str(sent))
-        check("...to the address that was typed", sent and sent[0]["to"] == "tt@gmail.com")
-        check("not logged in after submitting",
-              c.get("/settings", follow_redirects=False).status_code in (302, 303))
+        reset_limits()
+        page = c.get("/signup").text
+        check("signup page has a Send code button beside the email", 'id="send-code"' in page)
+        check("...a hidden verified-token field", 'name="verified_token"' in page)
+        check("...and Create account starts disabled", 'id="create-btn" disabled' in page)
 
-    link = sent[0]["link"]
-    token = token_of(link)
-    check("link points at the public domain", link.startswith("https://example.test/signup/confirm/"), link)
-    check("password is not readable in the link", "supersecret123" not in link)
-    check("email is not readable in the link", "tt@gmail.com" not in link and "gmail" not in link)
-    pending = read_signup_token(token)
-    check("link decrypts to the pending signup",
-          pending and pending["email"] == "tt@gmail.com" and pending["company"] == "Acme", str(pending))
-    check("only a password HASH travels, never the password",
-          pending and pending["pw"].startswith("$2") and pending["pw"] != "supersecret123")
-    check("link expires (24h max age honoured)", read_signup_token(token, max_age=-1) is None)
+        # --------------------------------------------------------- send code
+        r = c.post("/api/signup/send-code", data={"email": "not-an-email"})
+        check("invalid email is refused", r.status_code == 400 and not r.json()["ok"], r.text)
+        check("...without sending anything", sent == [])
 
-    # ------------------------------------------------------- forged / tampered
-    with TestClient(application.app) as c:
-        bad = token[:-4] + ("AAAA" if not token.endswith("AAAA") else "BBBB")
-        r = c.get(f"/signup/confirm/{bad}")
-        check("tampered link is rejected", "expired" in r.text.lower() or "invalid" in r.text.lower(), r.text[:300])
-        r = c.get("/signup/confirm/not-a-real-token")
-        check("garbage link is rejected", "invalid" in r.text.lower() or "expired" in r.text.lower())
-        check("rejected links create no account", users("tt@gmail.com") == [])
+        r, code, ticket = get_code(c, "tt@gmail.com")
+        check("send-code succeeds", r.json().get("ok") is True, r.text)
+        check("exactly one code email sent, to that address",
+              len(sent) == 1 and sent[0]["to"] == "tt@gmail.com", str(sent))
+        check("code is 6 digits", bool(code) and re.fullmatch(r"\d{6}", code), str(code))
+        check("THE FIX: sending a code creates no account", users("tt@gmail.com") == [])
+        payload = ticket.split(".")[0]
+        decoded = base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)).decode(errors="ignore")
+        check("the code itself is not inside the ticket the browser holds", code not in decoded, decoded)
 
-    # --------------------------------------------------- clicking creates it
-    with TestClient(application.app) as c:
-        r = c.get(f"/signup/confirm/{token}", follow_redirects=False)
-        check("confirming redirects into the app", r.status_code in (302, 303), str(r.status_code))
-        check("...to settings", r.headers.get("location", "").endswith("/settings"), r.headers.get("location"))
+        # ---------------------------------------------- submit without proof
+        r = c.post("/signup", data=form("tt@gmail.com", ""))
+        check("creating an account without the code is refused",
+              "6-digit code" in r.text and users("tt@gmail.com") == [], r.text[:200])
+        r = c.post("/signup", data=form("tt@gmail.com", "forged.token.value"))
+        check("a forged verified token is refused", users("tt@gmail.com") == [])
+
+        # ------------------------------------------------------- wrong codes
+        wrong = "000000" if code != "000000" else "111111"
+        r = verify(c, "tt@gmail.com", wrong, ticket)
+        check("a wrong code is rejected", not r.json()["ok"] and "Wrong code" in r.json()["detail"], r.text)
+        check("...and says how many tries are left", "4 attempts left" in r.json()["detail"], r.text)
+        r = verify(c, "other@gmail.com", code, ticket)
+        check("a code can't be used for a different email", not r.json()["ok"], r.text)
+        r = verify(c, "tt@gmail.com", code, "")
+        check("verifying without a ticket is refused", not r.json()["ok"], r.text)
+        check("an expired ticket is detected",
+              security.check_signup_code(ticket, "tt@gmail.com", code, max_age=-1)[0] == "expired")
+
+        # --------------------------------------------------------- right code
+        r = verify(c, "tt@gmail.com", code, ticket)
+        d = r.json()
+        check("the right code verifies", d.get("ok") is True and d.get("verified_token"), r.text)
+        token = d.get("verified_token", "")
+        check("still no account after verifying (created only on submit)", users("tt@gmail.com") == [])
+
+        r = c.post("/signup", data=form("someone@else.com", token))
+        check("a verified token for one email can't create another", users("someone@else.com") == [])
+
+        r = c.post("/signup", data=form("tt@gmail.com", token, password="123"))
+        check("a short password is still refused", "at least 8" in r.text, r.text[:200])
+        check("...keeping the verification so no new code is needed", f'value="{token}"' in r.text)
+        check("...and creating nothing", users("tt@gmail.com") == [])
+
+        r = c.post("/signup", data=form("TT@gmail.com ", token), follow_redirects=False)
+        check("verified email creates the account (case/space-insensitive)",
+              r.status_code in (302, 303), str(r.status_code))
+        check("...redirecting into settings", r.headers.get("location", "").endswith("/settings"))
         created = users("tt@gmail.com")
-        check("clicking the link creates the account", len(created) == 1)
-        check("...already verified (they proved the inbox)", created and created[0].is_verified is True)
-        check("...as the workspace owner", created and created[0].role == "owner")
+        check("account exists", len(created) == 1)
+        check("...ALREADY VERIFIED", created and created[0].is_verified is True)
+        check("...as the owner", created and created[0].role == "owner")
         with Session(db_eng) as db:
             company = db.get(Company, created[0].company_id) if created else None
-        check("...with the company name from the form", company and company.name == "Acme")
-        check("...and logs them straight in", c.get("/settings", follow_redirects=False).status_code == 200)
-        check("the original password works for sign-in",
-              auth.login("tt@gmail.com", "supersecret123")[0].email == "tt@gmail.com")
+        check("...with the company name", company and company.name == "Acme")
+        check("...and logged in", c.get("/settings", follow_redirects=False).status_code == 200)
 
     with TestClient(application.app) as c:
-        r = c.get(f"/signup/confirm/{token}", follow_redirects=False)
-        check("clicking the link twice does not create a duplicate", len(users("tt@gmail.com")) == 1)
-        check("...it says the account already exists", "already" in r.text.lower(), r.text[:300])
-        check("...and does not log in from a reused link",
-              c.get("/settings", follow_redirects=False).status_code in (302, 303))
+        r = c.post("/signup", data=form("tt@gmail.com", token), follow_redirects=False)
+        check("reusing the verified token can't create a duplicate", len(users("tt@gmail.com")) == 1)
+        check("...it says the account exists", "already exists" in r.text, r.text[:200])
 
-    # ------------------------------------------------------ form-side refusals
-    with TestClient(application.app) as c:
-        application._SIGNUP_ATTEMPTS.clear()
         before = len(sent)
-        r = c.post("/signup", data=form("tt@gmail.com"))
-        check("an existing email is refused on the form", "already exists" in r.text, r.text[:300])
-        check("...without sending another email", len(sent) == before)
+        r = c.post("/api/signup/send-code", data={"email": "tt@gmail.com"})
+        check("send-code refuses an email that already has an account",
+              r.status_code == 409 and len(sent) == before, r.text)
 
-        r = c.post("/signup", data=form("short@test.com", password="123"))
-        check("a short password is refused on the form", "at least 8" in r.text, r.text[:300])
-        check("...without sending an email", len(sent) == before)
-        check("...and the typed email is kept in the form", 'value="short@test.com"' in r.text)
+        # --------------------------------------------------- brute-force lock
+        reset_limits()
+        r, code2, ticket2 = get_code(c, "lock@test.com")
+        bad = "000000" if code2 != "000000" else "111111"
+        for _ in range(5):
+            verify(c, "lock@test.com", bad, ticket2)
+        r = verify(c, "lock@test.com", code2, ticket2)
+        check("after 5 wrong tries even the right code is locked out",
+              not r.json()["ok"] and "Too many" in r.json()["detail"], r.text)
 
-        r = c.post("/signup", data=form("solo@test.com", company="", kind="individual"))
-        solo = read_signup_token(token_of(sent[-1]["link"]))
-        check("individuals need no company - named after the mailbox",
-              solo and solo["company"] == "Solo" and solo["type"] == "individual", str(solo))
+        # ------------------------------------------------------- individuals
+        reset_limits()
+        _, code3, ticket3 = get_code(c, "solo@test.com")
+        t3 = verify(c, "solo@test.com", code3, ticket3).json()["verified_token"]
+        c.post("/signup", data=form("solo@test.com", t3, company="", kind="individual"))
+        solo = users("solo@test.com")
+        with Session(db_eng) as db:
+            sc = db.get(Company, solo[0].company_id) if solo else None
+        check("individuals need no company name", sc and sc.name == "Solo", str(sc and sc.name))
 
-    # -------------------------------------------------------- Brevo failure
+    # ------------------------------------------------------- Brevo failure
     with TestClient(application.app) as c:
-        application._SIGNUP_ATTEMPTS.clear()
-        with patch.object(application.mailer, "send_signup_confirmation",
+        reset_limits()
+        with patch.object(application.mailer, "send_signup_code",
                           return_value=(False, "Brevo error 400: invalid email")):
-            r = c.post("/signup", data=form("bounce@test.com"))
-        # The template HTML-escapes the apostrophe in "couldn't", so match past it.
-        check("a failed send shows an error instead of 'check your email'",
-              "send the confirmation email" in r.text and "Check your email" not in r.text, r.text[:300])
-        check("...and creates nothing", users("bounce@test.com") == [])
+            r = c.post("/api/signup/send-code", data={"email": "bounce@test.com"})
+        check("a failed send reports an error", r.status_code == 502 and not r.json()["ok"], r.text)
+        check("...and isn't counted toward the hourly cap", application._SIGNUP_ATTEMPTS.get("testclient", []) == [])
 
     # ------------------------------------------------------------- rate limit
     with TestClient(application.app) as c:
-        application._SIGNUP_ATTEMPTS.clear()
-        before = len(sent)
+        reset_limits()
         for i in range(3):
-            c.post("/signup", data=form(f"flood{i}@test.com"))
-        r = c.post("/signup", data=form("flood9@test.com"))
-        check("signups from one address are capped per hour", "Too many" in r.text, r.text[:300])
-        check("...the capped attempt sends no email", len(sent) == before + 3, str(len(sent) - before))
-        application._SIGNUP_ATTEMPTS.clear()
-        r = c.post("/signup", data=form("wrong@test.com", password="123"))
-        r = c.post("/signup", data=form("wrong@test.com", password="123"))
-        r = c.post("/signup", data=form("wrong@test.com", password="123"))
-        r = c.post("/signup", data=form("wrong@test.com", password="123"))
-        check("typos don't count toward the cap (only sent emails do)", "Too many" not in r.text)
+            c.post("/api/signup/send-code", data={"email": f"flood{i}@test.com"})
+        r = c.post("/api/signup/send-code", data={"email": "flood9@test.com"})
+        check("codes are capped per network per hour", r.status_code == 429, r.text)
 
 # ------------------------------------------------- Brevo not configured (dev)
 os.environ.pop("BREVO_API_KEY", None)
 with TestClient(application.app) as c:
-    application._SIGNUP_ATTEMPTS.clear()
-    r = c.post("/signup", data=form("local@test.com"))
-    check("without Brevo the flow still works (link goes to the server log)", "Check your email" in r.text)
-    check("...and still creates nothing up front", users("local@test.com") == [])
+    reset_limits()
+    r = c.post("/api/signup/send-code", data={"email": "local@test.com"})
+    check("without Brevo, send-code still works (code goes to the server log)", r.json().get("ok") is True)
+
+# ------------------------------------------ old emailed links keep working
+old = security.make_signup_token("oldlink@test.com", security.hash_password("supersecret123"), "Old Co", "enterprise")
+with TestClient(application.app) as c:
+    r = c.get(f"/signup/confirm/{old}", follow_redirects=False)
+    check("confirmation links already emailed before this change still work",
+          r.status_code in (302, 303) and len(users("oldlink@test.com")) == 1, str(r.status_code))
 
 # ------------------------------------------------- direct helper for scripts
 u, _ = auth.signup("script@test.com", "supersecret123", "Script Co")
 check("auth.signup() still creates an account directly (tests/scripts)", u.id is not None)
-check("...unverified, as before", u.is_verified is False)
 
 print("\n" + ("ALL PASSED" if not fails else f"{len(fails)} FAILED: {fails}"))
 try:

@@ -7,7 +7,7 @@
 
 {% if error %}<div class="alert">{{ error }}</div>{% endif %}
 
-<form method="post" action="/signup">
+<form method="post" action="/signup" id="signup-form">
   <label>I'm signing up as</label>
   <div class="seg">
     <label>
@@ -31,12 +31,29 @@
   </div>
 
   <label>Email address</label>
-  <input name="email" type="email" required value="{{ email or '' }}" placeholder="you@company.com"/>
+  <div style="display:flex;gap:8px;align-items:stretch">
+    <input id="email" name="email" type="email" required value="{{ email or '' }}"
+           placeholder="you@company.com" autocomplete="email" style="flex:1;min-width:0"/>
+    <button type="button" id="send-code" class="btn btn-ghost"
+            style="width:auto;margin-top:0;white-space:nowrap;padding:0 16px">Send code</button>
+  </div>
+
+  <div id="code-row" hidden>
+    <label>Verification code</label>
+    <div style="display:flex;gap:8px;align-items:stretch">
+      <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6"
+             placeholder="6-digit code" style="flex:1;min-width:0;letter-spacing:4px"/>
+      <button type="button" id="verify-code" class="btn btn-ghost"
+              style="width:auto;margin-top:0;white-space:nowrap;padding:0 16px">Verify</button>
+    </div>
+  </div>
+  <div id="email-status" class="note" aria-live="polite"></div>
+  <input type="hidden" name="verified_token" id="verified-token" value="{{ verified_token or '' }}"/>
 
   <label>Password</label>
   <input name="password" type="password" required minlength="8" placeholder="At least 8 characters"/>
 
-  <button class="btn btn-primary">Create account</button>
+  <button class="btn btn-primary" id="create-btn" disabled>Create account</button>
   <div class="note" style="text-align:center;margin-top:14px">
     By creating an account you agree to our
     <a href="/legal/terms" style="color:var(--primary)">Terms</a> and
@@ -52,6 +69,137 @@ function toggleCompany() {
   field.style.display = isIndividual ? "none" : "block";
 }
 toggleCompany();
+
+// Signup is three steps: send a code to the email, enter it, then create the
+// account. The server refuses account creation without the verified token
+// this sets - the disabled button is only a convenience, not the protection.
+const emailEl = document.getElementById("email");
+const sendBtn = document.getElementById("send-code");
+const codeRow = document.getElementById("code-row");
+const codeEl = document.getElementById("code");
+const verifyBtn = document.getElementById("verify-code");
+const statusEl = document.getElementById("email-status");
+const tokenEl = document.getElementById("verified-token");
+const createBtn = document.getElementById("create-btn");
+let ticket = "";
+let verifiedEmail = tokenEl.value ? emailEl.value.trim().toLowerCase() : "";
+let cooldown = null;
+
+function say(text, kind) {
+  statusEl.textContent = text;
+  statusEl.className = "note" + (kind ? " " + kind : "");
+}
+
+function setVerified(on) {
+  createBtn.disabled = !on;
+  sendBtn.hidden = on;
+  if (on) {
+    codeRow.hidden = true;
+    say("✓ Email verified", "ok");
+  }
+}
+
+async function api(url, data) {
+  try {
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(data),
+    });
+    return await r.json();
+  } catch (e) {
+    return { ok: false, detail: "Network error. Please try again." };
+  }
+}
+
+function startCooldown(seconds) {
+  clearInterval(cooldown);
+  let left = seconds;
+  sendBtn.disabled = true;
+  sendBtn.textContent = `Resend (${left}s)`;
+  cooldown = setInterval(() => {
+    left -= 1;
+    if (left <= 0) {
+      clearInterval(cooldown);
+      sendBtn.disabled = false;
+      sendBtn.textContent = "Resend code";
+    } else {
+      sendBtn.textContent = `Resend (${left}s)`;
+    }
+  }, 1000);
+}
+
+sendBtn.addEventListener("click", async () => {
+  const email = emailEl.value.trim();
+  if (!emailEl.checkValidity() || !email) {
+    say("Enter a valid email address first.", "bad");
+    return;
+  }
+  sendBtn.disabled = true;
+  sendBtn.textContent = "Sending…";
+  const d = await api("/api/signup/send-code", { email });
+  if (!d.ok) {
+    say(d.detail, "bad");
+    sendBtn.disabled = false;
+    sendBtn.textContent = "Send code";
+    return;
+  }
+  ticket = d.ticket;
+  codeRow.hidden = false;
+  codeEl.value = "";
+  codeEl.focus();
+  say(d.detail + " Check spam if you don't see it.", "");
+  startCooldown(60);
+});
+
+async function verify() {
+  const code = codeEl.value.trim();
+  if (code.length !== 6) {
+    say("Enter the 6-digit code from your email.", "bad");
+    return;
+  }
+  verifyBtn.disabled = true;
+  const email = emailEl.value.trim();
+  const d = await api("/api/signup/verify-code", { email, code, ticket });
+  verifyBtn.disabled = false;
+  if (!d.ok) {
+    say(d.detail, "bad");
+    return;
+  }
+  tokenEl.value = d.verified_token;
+  verifiedEmail = email.toLowerCase();
+  clearInterval(cooldown);
+  setVerified(true);
+}
+
+verifyBtn.addEventListener("click", verify);
+codeEl.addEventListener("input", () => {
+  codeEl.value = codeEl.value.replace(/\D/g, "").slice(0, 6);
+  if (codeEl.value.length === 6) verify();
+});
+
+// Changing the email after verifying it means the new address is unproven.
+emailEl.addEventListener("input", () => {
+  if (emailEl.value.trim().toLowerCase() === verifiedEmail && tokenEl.value) return;
+  tokenEl.value = "";
+  ticket = "";
+  codeRow.hidden = true;
+  clearInterval(cooldown);
+  sendBtn.hidden = false;
+  sendBtn.disabled = false;
+  sendBtn.textContent = "Send code";
+  createBtn.disabled = true;
+  say("", "");
+});
+
+document.getElementById("signup-form").addEventListener("submit", (e) => {
+  if (!tokenEl.value) {
+    e.preventDefault();
+    say("Verify your email with the code before creating your account.", "bad");
+  }
+});
+
+if (tokenEl.value) setVerified(true);
 </script>
 {% endblock %}
 

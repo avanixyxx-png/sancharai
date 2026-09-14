@@ -251,3 +251,65 @@ def read_signup_token(token: str, max_age: int = 86_400) -> dict | None:
     if not all(pending.get(k) for k in ("email", "pw", "company", "type")):
         return None
     return pending
+
+
+# -------------------------------------------- signup email codes (6-digit OTP)
+# The browser holds a signed "ticket" for the code it asked for. The ticket
+# carries only an HMAC of the code - keyed with the server secret - so the code
+# can neither be read out of it nor brute-forced offline. Online guessing is
+# capped per ticket in app.py. No database table is needed.
+_code_signer = URLSafeTimedSerializer(_SESSION_SECRET, salt="sancharai-signup-code")
+_verified_email_signer = URLSafeTimedSerializer(_SESSION_SECRET, salt="sancharai-email-verified")
+SIGNUP_CODE_TTL = 600  # 10 minutes
+
+
+def _code_mac(nonce: str, email: str, code: str) -> str:
+    return hmac.new(
+        _SESSION_SECRET.encode(), f"signup-code:{nonce}:{email}:{code}".encode(), sha256
+    ).hexdigest()
+
+
+def make_signup_code(email: str) -> tuple[str, str]:
+    """Returns (code, ticket). The code goes in the email; the ticket to the browser."""
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    nonce = secrets.token_urlsafe(12)
+    ticket = _code_signer.dumps({"e": email, "n": nonce, "m": _code_mac(nonce, email, code)})
+    return code, ticket
+
+
+def check_signup_code(
+    ticket: str, email: str, code: str, max_age: int = SIGNUP_CODE_TTL
+) -> tuple[str, str]:
+    """Returns (status, nonce). status is "ok", "wrong", "expired" or "invalid".
+
+    nonce identifies the ticket, so the caller can count wrong guesses per code.
+    """
+    try:
+        data = _code_signer.loads(ticket or "", max_age=max_age)
+    except SignatureExpired:
+        return "expired", ""
+    except BadSignature:
+        return "invalid", ""
+    if not isinstance(data, dict) or data.get("e") != email:
+        return "invalid", ""
+    nonce = str(data.get("n", ""))
+    code = (code or "").strip()
+    if not (len(code) == 6 and code.isdigit()):
+        return "wrong", nonce
+    if hmac.compare_digest(_code_mac(nonce, email, code), str(data.get("m", ""))):
+        return "ok", nonce
+    return "wrong", nonce
+
+
+def make_email_verified_token(email: str) -> str:
+    """Proof, handed to the signup form, that this email passed the code step."""
+    return _verified_email_signer.dumps({"e": email})
+
+
+def read_email_verified_token(token: str, max_age: int = 1800) -> str | None:
+    """The verified email, or None if forged or older than 30 minutes."""
+    try:
+        data = _verified_email_signer.loads(token or "", max_age=max_age)
+    except (BadSignature, SignatureExpired):
+        return None
+    return data.get("e") if isinstance(data, dict) else None
