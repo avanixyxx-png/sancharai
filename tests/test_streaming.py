@@ -116,9 +116,14 @@ threading.Thread(target=ai.serve_forever, daemon=True).start()
 
 
 # -------------------------------------------------------- setup a real tenant
+from auth import signup as create_test_account  # noqa: E402
+from security import SESSION_COOKIE  # noqa: E402
+
 with TestClient(application.app) as c:
-    c.post("/signup", data={"email": "st@test.com", "password": "supersecret123",
-                            "company_name": "Stream Co", "account_type": "enterprise"})
+    # The signup form creates nothing until its emailed link is clicked, so
+    # the test account is created directly and its session cookie attached.
+    _, _cookie = create_test_account("st@test.com", "supersecret123", "Stream Co", "enterprise")
+    c.cookies.set(SESSION_COOKIE, _cookie)
     csrf = re.search(r'name="csrf" content="([^"]+)"', c.get("/").text).group(1)
     c.post("/settings", data={
         "telephony_provider": "twilio",

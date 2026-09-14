@@ -75,9 +75,14 @@ check("order id is stamped onto the invoice for the anti-replay check",
       probe.provider_ref == order["id"], probe.provider_ref)
 
 # ------------------------------------------------------------ full app flow
+from auth import signup as create_test_account  # noqa: E402
+from security import SESSION_COOKIE  # noqa: E402
+
 with TestClient(application.app) as c:
-    c.post("/signup", data={"email": "pay@test.com", "password": "supersecret123",
-                            "company_name": "Pay Co", "account_type": "enterprise"})
+    # The signup form creates nothing until its emailed link is clicked, so
+    # the test account is created directly and its session cookie attached.
+    _, _cookie = create_test_account("pay@test.com", "supersecret123", "Pay Co", "enterprise")
+    c.cookies.set(SESSION_COOKIE, _cookie)
     csrf = re.search(r'name="csrf" content="([^"]+)"', c.get("/").text).group(1)
 
     page = c.get("/billing").text

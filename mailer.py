@@ -112,6 +112,24 @@ def send_verification(to_email: str, link: str) -> tuple[bool, str]:
     )
 
 
+def send_signup_confirmation(to_email: str, link: str) -> tuple[bool, str]:
+    body = (
+        "<div style='font-size:15px;line-height:1.6'>"
+        "Confirm this email address to finish creating your SancharAI account. "
+        "Your account is only created once you click the button below."
+        "</div>"
+        + _BUTTON.format(url=link, label="Confirm email &amp; create account")
+        + "<div style='font-size:12px;color:#8b8b9e'>This link expires in 24 hours.</div>"
+    )
+    return send(
+        to_email,
+        "Confirm your email to create your SancharAI account",
+        _WRAP.format(body=body),
+        f"Confirm your email to create your SancharAI account: {link}\n\n"
+        "This link expires in 24 hours.",
+    )
+
+
 def send_password_reset(to_email: str, link: str) -> tuple[bool, str]:
     body = (
         "<div style='font-size:15px;line-height:1.6'>"

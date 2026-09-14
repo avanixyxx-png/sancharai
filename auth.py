@@ -51,10 +51,14 @@ def _seed_default_agent(company_id: int, company_name: str, db: Session) -> None
     )
 
 
-def signup(
+def prepare_signup(
     email: str, password: str, company_name: str, account_type: str = "enterprise"
-) -> tuple[User, str]:
-    """Create a Company + its first User. Returns the user and a session cookie.
+) -> tuple[str, str, str]:
+    """Validate a signup and return the cleaned (email, company_name, account_type).
+
+    Creates nothing. The web form calls this, emails a confirmation link, and
+    only creates the account once that link is clicked - so a mistyped or fake
+    address never produces an account.
 
     account_type "individual": no business required - the workspace is named
     after the person, so freelancers and solo users can sign up too.
@@ -73,6 +77,30 @@ def signup(
     with Session(engine) as db:
         if db.exec(select(User).where(User.email == email)).first():
             raise AuthError("An account with that email already exists.")
+    return email, company_name, account_type
+
+
+def signup(
+    email: str, password: str, company_name: str, account_type: str = "enterprise"
+) -> tuple[User, str]:
+    """Create an account immediately, unverified. For tests and scripts only -
+    the signup form goes through prepare_signup() and the emailed link."""
+    email, company_name, account_type = prepare_signup(email, password, company_name, account_type)
+    return create_account(email, hash_password(password), company_name, account_type, verified=False)
+
+
+def create_account(
+    email: str, password_hash: str, company_name: str, account_type: str, *, verified: bool
+) -> tuple[User, str]:
+    """Create a Company + its first User. Returns the user and a session cookie.
+
+    Re-checks the email: between the confirmation email being sent and its
+    link being clicked, the same address may already have been registered
+    (or the link clicked twice).
+    """
+    with Session(engine) as db:
+        if db.exec(select(User).where(User.email == email)).first():
+            raise AuthError("An account with that email already exists.")
 
         company = Company(
             name=company_name,
@@ -88,8 +116,9 @@ def signup(
         user = User(
             company_id=company.id,
             email=email,
-            password_hash=hash_password(password),
+            password_hash=password_hash,
             role="owner",
+            is_verified=verified,
         )
         db.add(user)
         # Every company starts with a settings row so the UI never hits a null.

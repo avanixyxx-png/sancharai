@@ -55,9 +55,10 @@ import telephony  # noqa: E402
 from auth import (  # noqa: E402
     AuthError,
     accept_invite,
+    create_account,
     get_current_user,
     login,
-    signup,
+    prepare_signup,
 )
 from models import (  # noqa: E402
     Agent,
@@ -87,10 +88,12 @@ from security import (  # noqa: E402
     hash_password,
     make_invite_token,
     make_reset_token,
+    make_signup_token,
     make_verify_token,
     mask,
     read_invite_token,
     read_reset_token,
+    read_signup_token,
     read_verify_token,
     set_session_cookie,
     verify_password,
@@ -369,6 +372,25 @@ async def signup_page(request: Request):
     return templates.TemplateResponse("signup.html", {"request": request})
 
 
+# Confirmation emails sent per client IP in the last hour. Every signup attempt
+# sends a real email, so without a cap one script could burn the whole Brevo
+# daily quota and get the sending domain flagged as spam. In memory is enough:
+# the app runs as a single instance, and a restart only resets the window.
+_SIGNUP_ATTEMPTS: dict[str, list[float]] = {}
+
+
+def _signup_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def _signup_capped(ip: str) -> bool:
+    limit = int(os.getenv("SANCHARAI_SIGNUP_LIMIT", "5") or 5)
+    cutoff = time.time() - 3600
+    recent = [t for t in _SIGNUP_ATTEMPTS.get(ip, []) if t > cutoff]
+    _SIGNUP_ATTEMPTS[ip] = recent
+    return len(recent) >= limit
+
+
 @app.post("/signup", response_class=HTMLResponse)
 async def signup_submit(
     request: Request,
@@ -377,20 +399,97 @@ async def signup_submit(
     company_name: str = Form(default=""),
     account_type: str = Form(default="enterprise"),
 ):
-    try:
-        user, cookie = signup(email, password, company_name, account_type)
-    except AuthError as exc:
+    """Validate and email a confirmation link. Creates NOTHING.
+
+    The account only exists once that link is clicked (signup_confirm), so a
+    mistyped or someone-else's address never produces an account.
+    """
+
+    def form_error(message: str):
         return templates.TemplateResponse(
             "signup.html",
             {
                 "request": request,
-                "error": str(exc),
+                "error": message,
                 "email": email,
                 "company_name": company_name,
                 "account_type": account_type,
             },
         )
-    _send_verification_for(user, request)
+
+    ip = _signup_ip(request)
+    if _signup_capped(ip):
+        return form_error("Too many signup attempts from your network. Please try again in an hour.")
+
+    try:
+        clean_email, clean_company, clean_type = prepare_signup(
+            email, password, company_name, account_type
+        )
+    except AuthError as exc:
+        return form_error(str(exc))
+
+    token = make_signup_token(clean_email, hash_password(password), clean_company, clean_type)
+    link = f"{_public_base(request)}/signup/confirm/{token}"
+
+    if mailer.is_configured():
+        ok, detail = mailer.send_signup_confirmation(clean_email, link)
+        if not ok:
+            print(f"[EMAIL FAILED] signup confirmation for {clean_email}: {detail}", flush=True)
+            return form_error(
+                "We couldn't send the confirmation email. Check the address and try again."
+            )
+    else:
+        print(f"[EMAIL NOT CONFIGURED] signup link for {clean_email}: {link}", flush=True)
+
+    # Only sent emails count toward the cap, so fixing a typo isn't punished.
+    _SIGNUP_ATTEMPTS.setdefault(ip, []).append(time.time())
+
+    return templates.TemplateResponse(
+        "message.html",
+        {
+            "request": request,
+            "title": "Check your email",
+            "body": f"We sent a confirmation link to {clean_email}. Click it within 24 hours "
+            "to finish creating your account. Nothing is created until you do - "
+            "if you don't see it, check your spam folder.",
+            "link": "/login",
+            "link_text": "Back to sign in",
+        },
+    )
+
+
+@app.get("/signup/confirm/{token}", response_class=HTMLResponse)
+async def signup_confirm(request: Request, token: str):
+    """Clicking the emailed link is what creates the account - already
+    verified, since reaching the inbox proves the address is theirs."""
+    pending = read_signup_token(token)
+    if not pending:
+        return templates.TemplateResponse(
+            "message.html",
+            {
+                "request": request,
+                "title": "Link expired",
+                "body": "This signup link is invalid or has expired. Please sign up again.",
+                "link": "/signup",
+                "link_text": "Sign up again",
+            },
+        )
+    try:
+        _, cookie = create_account(
+            pending["email"], pending["pw"], pending["company"], pending["type"], verified=True
+        )
+    except AuthError:
+        # The link was already used, or the address was registered in between.
+        return templates.TemplateResponse(
+            "message.html",
+            {
+                "request": request,
+                "title": "Account already exists",
+                "body": "An account for this email has already been created. Sign in to continue.",
+                "link": "/login",
+                "link_text": "Sign in",
+            },
+        )
     resp = _redirect("/settings")
     set_session_cookie(resp, cookie)
     return resp

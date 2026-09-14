@@ -214,3 +214,40 @@ def read_invite_token(token: str, max_age: int = 7 * 86_400) -> int | None:
         return _invite_signer.loads(token, max_age=max_age).get("iid")
     except (BadSignature, SignatureExpired):
         return None
+
+
+# ------------------------------------------------ email-first signup links
+# Signup creates nothing until the emailed link is clicked, so the pending
+# account has to travel inside the link itself. It is ENCRYPTED, not just
+# signed: a signed-only token is plain base64 anyone can read, and this one
+# carries the email and the password hash.
+_signup_signer = URLSafeTimedSerializer(_SESSION_SECRET, salt="sancharai-signup")
+
+
+def make_signup_token(email: str, password_hash: str, company_name: str, account_type: str) -> str:
+    import json
+
+    payload = json.dumps(
+        {"email": email, "pw": password_hash, "company": company_name, "type": account_type}
+    )
+    return _signup_signer.dumps({"d": encrypt(payload)})
+
+
+def read_signup_token(token: str, max_age: int = 86_400) -> dict | None:
+    """Returns the pending signup, or None if forged, tampered, or expired (24h)."""
+    import json
+
+    try:
+        data = _signup_signer.loads(token, max_age=max_age)
+    except (BadSignature, SignatureExpired):
+        return None
+    raw = decrypt(data.get("d", "")) if isinstance(data, dict) else ""
+    if not raw:
+        return None
+    try:
+        pending = json.loads(raw)
+    except ValueError:
+        return None
+    if not all(pending.get(k) for k in ("email", "pw", "company", "type")):
+        return None
+    return pending
