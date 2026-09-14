@@ -250,12 +250,18 @@ def validate_signature(settings, provider: str, url: str, form: dict, headers: d
     to validate against during first-time setup - matching the existing
     Twilio behaviour this replaces.
     """
+    # Header names are case-insensitive in HTTP, and Starlette hands them over
+    # lowercased - so dict(request.headers) has "x-twilio-signature", never
+    # "X-Twilio-Signature". Looking up the capitalised name found nothing,
+    # every genuine call failed verification, and the app hung up on it.
+    headers = {str(k).lower(): v for k, v in (headers or {}).items()}
+
     if provider == "plivo":
         auth_token = decrypt(settings.plivo_auth_token_enc) if settings else ""
         if not auth_token:
             return True
-        signature = headers.get("X-Plivo-Signature-V3", "")
-        nonce = headers.get("X-Plivo-Signature-V3-Nonce", "")
+        signature = headers.get("x-plivo-signature-v3", "")
+        nonce = headers.get("x-plivo-signature-v3-nonce", "")
         if not (signature and nonce):
             return False
         try:
@@ -266,7 +272,7 @@ def validate_signature(settings, provider: str, url: str, form: dict, headers: d
     auth_token = decrypt(settings.twilio_auth_token_enc) if settings else ""
     if not auth_token:
         return True
-    signature = headers.get("X-Twilio-Signature", "")
+    signature = headers.get("x-twilio-signature", "")
     if not signature:
         return False
     try:
