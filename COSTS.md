@@ -98,6 +98,31 @@ carry blindly. Deepgram's flat per-minute rate removes that risk.
 - **Trial accounts** can only call numbers you've verified, and play a trial
   message first
 
+### Can any carrier beat Twilio to India without KYC? ✅ (checked 21 Nov 2026)
+
+Ten providers were checked for a published rate to Indian **mobile** numbers
+from a foreign number. Almost nobody publishes one.
+
+| Provider | India rate published? |
+|---|---|
+| Twilio | ✅ **₹4.35/min** to India mobile |
+| DIDWW | ✅ $0.03/min = ₹2.64 — but **landline prefixes only**, no mobile |
+| Plivo | ✅ ₹0.38/min — **within India only**, needs KYC |
+| Sinch | ❌ public price list downloads empty (headers, no rows) |
+| Telnyx, Flowroute | ❌ no India rate on any readable page |
+| VoIP.ms, Bandwidth | ❌ pages block automated reading |
+| Vonage | ❌ page blocked |
+
+**Conclusion: under ₹2/min all-in is impossible without an Indian number.**
+The cheapest verified international call to an Indian mobile is Twilio's
+₹4.35, already over target before speech or AI.
+
+**The one untried lever:** the carriers that hide their rates may quote
+cheaper wholesale. Ask Telnyx, Bandwidth and Sinch: *"What is your
+per-minute rate for outbound calls terminating to Indian mobile (+91) from
+a US SIP trunk, at 5,000-20,000 minutes a month?"* If anyone quotes under
+₹1.50, under ₹2 becomes reachable without KYC.
+
 ### Plivo — cheaper Indian calls (set up in code, unused)
 - **India domestic:** **₹0.38/min** ✅
 - **Speech recognition:** ₹1.70 per 15 seconds ✅
