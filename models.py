@@ -400,6 +400,13 @@ class CallSession(SQLModel, table=True):
     # a menu they may not understand.
     language_asks: int = Field(default=0)
 
+    # Consecutive turns where the caller said nothing. Every re-prompt costs a
+    # fresh <Gather> (about Rs 1.75 on Twilio) plus the minutes ticking by, so
+    # a line nobody is speaking on - voicemail the machine-detector missed, a
+    # phone in a pocket, a caller who walked away - would otherwise re-ask
+    # until max_call_seconds killed it, burning Rs 40+ on a dead call.
+    silent_turns: int = Field(default=0)
+
     @property
     def customer(self) -> dict:
         try:
@@ -517,6 +524,7 @@ def _add_missing_columns() -> None:
             "language": "VARCHAR DEFAULT 'en-IN'",
             "awaiting_language": "BOOLEAN DEFAULT 0",
             "language_asks": "INTEGER DEFAULT 0",
+            "silent_turns": "INTEGER DEFAULT 0",
         },
         "companysettings": {
             "groq_model": "VARCHAR DEFAULT 'llama-3.1-8b-instant'",

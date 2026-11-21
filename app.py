@@ -395,6 +395,11 @@ def _signup_capped(ip: str) -> bool:
     return len(recent) >= limit
 
 
+# How many silent turns to tolerate before hanging up. Two re-prompts is
+# enough for a real person who missed the question; beyond that the line is
+# almost always dead and every further turn costs money for nothing.
+MAX_SILENT_TURNS = 2
+
 # Wrong code guesses per ticket. Five tries on a 6-digit code is a 1-in-200,000
 # chance of guessing it before the ticket locks.
 _CODE_FAILURES: dict[str, int] = {}
@@ -2581,6 +2586,22 @@ async def hook_respond(request: Request, token: str):
                 return _twiml(resp, provider)
 
             if not SpeechResult.strip():
+                # Give up after two silent turns instead of re-asking forever.
+                # Each re-ask is a fresh <Gather> (~Rs 1.75 on Twilio) on a
+                # line nobody is talking on, and without a limit it repeats
+                # until max_call_seconds - tens of rupees for a dead call.
+                silent = (session.silent_turns if session else 0) + 1
+                if session:
+                    session.silent_turns = silent
+                    db.add(session)
+                    db.commit()
+                if silent > MAX_SILENT_TURNS:
+                    print(f"[{company.name}] {CallSid[:10]}: silent {silent}x - hanging up",
+                          flush=True)
+                    resp.say("I can't hear anything, so I'll ring back later. Goodbye.",
+                             engine.voice_for(voice_name, language))
+                    resp.hangup()
+                    return _twiml(resp, provider)
                 resp.gather(
                     action=f"/hook/{token}/respond", language=language,
                     speech_timeout=s.speech_timeout,
@@ -2588,6 +2609,12 @@ async def hook_respond(request: Request, token: str):
                     voice=engine.voice_for(voice_name, language),
                 )
                 return _twiml(resp, provider)
+
+            # They spoke, so the silence run is over.
+            if session and session.silent_turns:
+                session.silent_turns = 0
+                db.add(session)
+                db.commit()
 
             print(f"[{company.name}] heard: {SpeechResult!r}", flush=True)
             faqs = db.exec(select(Faq).where(Faq.company_id == company.id)).all()
