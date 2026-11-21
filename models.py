@@ -407,6 +407,12 @@ class CallSession(SQLModel, table=True):
     # until max_call_seconds killed it, burning Rs 40+ on a dead call.
     silent_turns: int = Field(default=0)
 
+    # What the agent should say next, waiting to be collected.
+    # Twilio lets us hand it fresh XML directly when redirecting a live call;
+    # Plivo's transfer API takes only a URL it will fetch, so the reply is
+    # parked here and served by /hook/{token}/say/{call_id} when Plivo asks.
+    pending_reply: str = Field(default="")
+
     @property
     def customer(self) -> dict:
         try:
@@ -525,6 +531,7 @@ def _add_missing_columns() -> None:
             "awaiting_language": "BOOLEAN DEFAULT 0",
             "language_asks": "INTEGER DEFAULT 0",
             "silent_turns": "INTEGER DEFAULT 0",
+            "pending_reply": "VARCHAR DEFAULT ''",
         },
         "companysettings": {
             "groq_model": "VARCHAR DEFAULT 'llama-3.1-8b-instant'",

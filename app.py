@@ -2416,6 +2416,39 @@ async def hook_stream(ws: WebSocket, token: str):
             pass
 
 
+@app.api_route("/hook/{token}/say/{call_id}", methods=["GET", "POST"])
+async def hook_say(request: Request, token: str, call_id: str):
+    """Hand Plivo the words the agent should speak next.
+
+    Twilio takes new instructions inline when a live call is redirected;
+    Plivo's transfer API only accepts a URL it will fetch, so streaming.py
+    parks the reply on the call's own row and points Plivo here. Accepts GET
+    as well as POST because the fetch method is configurable at Plivo's end.
+
+    The reply is cleared once served, so a retried or replayed fetch can
+    never make the agent repeat the previous turn.
+    """
+    with Session(db_engine) as db:
+        company, s = _tenant(token, db)
+        provider = telephony.provider_of(s) if s else "plivo"
+        if not company:
+            return _twiml(telephony.CallResponse().hangup(), provider)
+
+        session = engine.get_session_for(db, call_id)
+        # Scope it: a call id from another workspace must not be collectable
+        # through this workspace's token.
+        if not session or session.company_id != company.id or not session.pending_reply:
+            print(f"[stream] nothing parked for {call_id[:12]}", flush=True)
+            return _twiml(telephony.CallResponse().pause(2), provider)
+
+        xml = session.pending_reply
+        session.pending_reply = ""
+        db.add(session)
+        db.commit()
+
+    return Response(content=xml, media_type="application/xml")
+
+
 @app.post("/hook/{token}/voice")
 async def hook_voice(request: Request, token: str):
     with Session(db_engine) as db:

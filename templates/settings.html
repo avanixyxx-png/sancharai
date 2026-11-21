@@ -152,9 +152,9 @@
           encrypted. Leave blank to keep the current one.
         </div>
         <div class="note warn" style="margin-top:10px">
-          Currently Twilio-only, and newer than the rest of the call path —
-          place a test call and confirm the agent still answers before using
-          this on a live campaign.
+          Works with Twilio and Plivo, but newer than the rest of the call
+          path and not yet proven on a real call — place a test call and
+          confirm the agent still answers before using it on a live campaign.
         </div>
       </div>
     </div>
@@ -469,9 +469,11 @@
           </select>
           <div class="note">
             The top group speaks every language correctly and stays the same person
-            when a call switches language. Currently in beta at Twilio and may cost
-            more per minute — check your Twilio pricing before running volume on it.
-          </div></div>
+            when a call switches language. It is also the most expensive voice tier —
+            see the running estimate below before using it for volume.
+          </div>
+          <div id="cost-estimate" class="note" style="margin-top:10px;padding:10px 12px;
+               border:1px solid var(--border-2);border-radius:9px"></div></div>
         <div><label>Default language</label>
           <select name="speech_language">
             {% for l, lbl in [('en-IN','English (India)'),('hi-IN','Hindi'),('gu-IN','Gujarati'),
@@ -564,6 +566,58 @@
 <script>
 /** Only the chosen provider's fields are shown — three key boxes at once
     invites putting a key in the wrong one. */
+/* ---------------------------------------------------- running cost estimate
+   What a minute of conversation costs, from the three choices that drive it.
+   Rates are per minute in rupees, assuming about three turns a minute and
+   ~500 spoken characters. They are list prices checked against each
+   provider's own pricing page, not a promise - a chatty caller costs more on
+   per-turn billing. */
+const RATE = {
+  call:  { twilio: 4.35, plivo: 0.38 },          // to an Indian mobile
+  stt:   { twilio: 5.25, plivo: 5.10, deepgram: 0.51 },
+  tts:   { chirp3: 5.70, standard: 0.35, plivoFree: 0.00 },
+};
+const CHIRP3 = ["Aoede", "Kore", "Leda", "Zephyr", "Charon", "Fenrir", "Orus", "Puck"];
+
+function costVerdict(total) {
+  // TODO(human): decide what each price level should say to the user.
+  // Return { text: "...", cls: "ok" | "warn" | "bad" } - cls colours the line
+  // green, amber or red. `total` is rupees per minute (roughly 0.9 to 15).
+  return { text: "", cls: "" };
+}
+
+function estimateCost() {
+  const box = document.getElementById("cost-estimate");
+  if (!box) return;
+  const carrier = (document.querySelector('[name="telephony_provider"]') || {}).value || "twilio";
+  const sttEl = document.querySelector('input[name="stt_provider"]:checked');
+  const stt = sttEl ? sttEl.value : "carrier";
+  const voice = ((document.querySelector('[name="voice"]') || {}).value || "");
+
+  const call = RATE.call[carrier] ?? RATE.call.twilio;
+  const listen = stt === "deepgram" ? RATE.stt.deepgram : (RATE.stt[carrier] ?? RATE.stt.twilio);
+  // Plivo includes its own text-to-speech at no extra charge; Chirp3 voices
+  // are Twilio's priciest tier; everything else is a standard voice.
+  let speak = RATE.tts.standard;
+  if (CHIRP3.includes(voice)) speak = RATE.tts.chirp3;
+  else if (carrier === "plivo") speak = RATE.tts.plivoFree;
+
+  const total = call + listen + speak;
+  const verdict = costVerdict(total);
+  box.innerHTML =
+    `<b>Estimated ₹${total.toFixed(2)} per minute</b> &nbsp;` +
+    `<span style="color:var(--hint)">call ₹${call.toFixed(2)} + listening ₹${listen.toFixed(2)} ` +
+    `+ speaking ₹${speak.toFixed(2)}</span>` +
+    (verdict.text ? `<div class="${verdict.cls}" style="margin-top:6px">${verdict.text}</div>` : "");
+}
+
+["[name=\"voice\"]", "[name=\"telephony_provider\"]"].forEach(sel => {
+  const el = document.querySelector(sel);
+  if (el) el.addEventListener("change", estimateCost);
+});
+document.querySelectorAll('input[name="stt_provider"]').forEach(
+  el => el.addEventListener("change", estimateCost));
+
 function showStt() {
   const picked = document.querySelector('input[name="stt_provider"]:checked').value;
   document.getElementById("p-deepgram").classList.toggle("on", picked === "deepgram");
@@ -577,6 +631,7 @@ function showProvider() {
 }
 showProvider();
 showStt();
+estimateCost();
 
 /** Collect named fields from the settings form so the Test buttons check what
     is on screen right now, not what was last saved. */

@@ -201,8 +201,11 @@ class FakeWS:
 redirects = []
 
 
-def fake_redirect(settings, provider, call_id, xml):
-    redirects.append({"call_id": call_id, "xml": xml, "provider": provider})
+def fake_redirect(settings, provider, call_id, xml, fetch_url=""):
+    # fetch_url is only used for Plivo, which fetches its reply from a URL
+    # instead of being handed the XML - see tests/test_plivo_streaming.py.
+    redirects.append({"call_id": call_id, "xml": xml, "provider": provider,
+                      "fetch_url": fetch_url})
 
 
 async def main():

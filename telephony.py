@@ -218,26 +218,34 @@ def place_call(
     return sid, "twilio"
 
 
-def redirect_call(settings, provider: str, call_id: str, xml: str) -> None:
+def redirect_call(settings, provider: str, call_id: str, xml: str, fetch_url: str = "") -> None:
     """Point a call that is already in progress at new instructions.
 
     This is how the streaming path speaks: the WebSocket only carries audio TO
-    us, so saying something back means handing the carrier fresh XML for the
-    live call. Raises on failure rather than returning a flag - the caller
-    logs it, and a silent no-op here would look exactly like the AI having
-    nothing to say.
+    us, so saying something back means giving the carrier new instructions for
+    the live call. The two carriers want that differently:
+
+      Twilio accepts the XML inline (calls(sid).update(twiml=...)).
+      Plivo accepts only a URL it will fetch - its Transfer API takes
+      aleg_url, never a document - so the caller parks the reply somewhere
+      and passes the address to collect it from.
+
+    Raises on failure rather than returning a flag: the caller logs it, and a
+    silent no-op here would look exactly like the AI having nothing to say.
     """
     if not call_id:
         raise TelephonyError("No call id to redirect.")
 
     if provider == "plivo":
-        # UNVERIFIED shape - Plivo's live-call update is documented as taking
-        # a URL to fetch rather than inline XML, so this may need a hosted
-        # endpoint instead. Twilio is the tested path for streaming.
-        raise TelephonyError(
-            "Live-call redirect is not implemented for Plivo yet - "
-            "streaming STT is Twilio-only while the design is being proven."
+        if not fetch_url:
+            raise TelephonyError("Plivo needs a URL to fetch the reply from.")
+        # POST /v1/Account/{auth_id}/Call/{call_uuid}/ - "Transfer an
+        # in-progress call to fetch and execute XML from a different URL".
+        # aleg = the caller's own leg, which is the one our agent is on.
+        _plivo_client(settings).calls.transfer(
+            call_uuid=call_id, legs="aleg", aleg_url=fetch_url, aleg_method="POST"
         )
+        return
 
     _twilio_client(settings).calls(call_id).update(twiml=xml)
 

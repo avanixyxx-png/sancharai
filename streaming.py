@@ -53,7 +53,10 @@ def _frame_call_id(msg: dict) -> str:
     """The carrier's id for this call, wherever it hides in the start frame."""
     start = msg.get("start") if isinstance(msg.get("start"), dict) else {}
     for src in (start, msg):
-        for key in ("callSid", "call_sid", "callUUID", "call_uuid", "CallUUID"):
+        # Twilio sends start.callSid; Plivo's documented field is start.callId.
+        # Missing "callId" meant a Plivo stream never learned which call it
+        # belonged to, so no reply could ever be sent back.
+        for key in ("callSid", "call_sid", "callId", "callUUID", "call_uuid", "CallUUID"):
             val = src.get(key)
             if isinstance(val, str) and val:
                 return val
@@ -137,6 +140,23 @@ async def run_call(ws, company, settings, token: str, public_base: str) -> None:
               f"{state['frames']} audio frames, {state['turns']} turns", flush=True)
 
 
+def _park_reply(call_id: str, xml: str) -> bool:
+    """Save the reply for Plivo to fetch. Returns False if the call is gone."""
+    from sqlmodel import Session as DbSession
+    from sqlmodel import select
+
+    from models import CallSession, engine as db_engine
+
+    with DbSession(db_engine) as db:
+        row = db.exec(select(CallSession).where(CallSession.call_sid == call_id)).first()
+        if not row:
+            return False
+        row.pending_reply = xml
+        db.add(row)
+        db.commit()
+    return True
+
+
 async def _reply(company, settings, token, call_id, heard, public_base) -> None:
     """Think of a reply and push it into the live call."""
     if not call_id:
@@ -162,9 +182,19 @@ async def _reply(company, settings, token, call_id, heard, public_base) -> None:
     resp.pause(30)
 
     body, _ = resp.render(provider)
+    fetch_url = ""
+    if provider == "plivo":
+        # Plivo's transfer API takes a URL, never a document, so park the
+        # reply on the call's own row and hand Plivo the address to collect
+        # it from. Storing it keyed by call means two calls in flight can
+        # never be served each other's words.
+        fetch_url = f"{public_base}/hook/{token}/say/{call_id}"
+        if not await asyncio.to_thread(_park_reply, call_id, body):
+            print("[stream] could not park the reply - no session row", flush=True)
+            return
     try:
         await asyncio.to_thread(
-            telephony.redirect_call, settings, provider, call_id, body
+            telephony.redirect_call, settings, provider, call_id, body, fetch_url
         )
     except Exception as exc:  # noqa: BLE001
         print(f"[stream] redirect FAILED: {exc}", flush=True)
