@@ -106,10 +106,41 @@ carry blindly. Deepgram's flat per-minute rate removes that risk.
 
 ### Deepgram — cheaper listening
 - **Nova-3 multilingual streaming:** $0.0058/min = **₹0.51** ✅
-- **$200 free credit** ≈ 34,000 minutes ✅
-- **Aura text-to-speech:** $0.015/1k chars ✅ — but **no Indian languages** ✅,
-  so not usable for Hindi or Gujarati
+- **Nova-3 English only:** $0.0048/min = ₹0.42 ✅
+- **$200 free credit ≈ 43,000 minutes**, no card, no expiry ✅
+- **Aura text-to-speech:** Aura-1 $0.015/1k chars (₹0.66/min), Aura-2
+  $0.030/1k (₹1.32/min) ✅ — but **no Indian languages** ✅, so unusable for
+  Hindi or Gujarati
 - **Status in your app:** built, never tested on a real call
+
+### Every listening option compared ✅ (checked 21 Nov 2026)
+
+| Provider | Price | ₹/min | Live streaming? | In your app |
+|---|---|---|---|---|
+| Twilio (current) | ₹1.75/turn | **₹5.25** | ✅ | ✅ |
+| **Deepgram Nova-3 multilingual** | $0.0058/min | **₹0.51** | ✅ | ✅ built |
+| Deepgram Nova-3 English | $0.0048/min | ₹0.42 | ✅ | ✅ built |
+| AssemblyAI real-time | $0.30/hr | ₹0.44 | ✅ | ❌ needs code |
+| AssemblyAI voice-agent tier | $0.45/hr | ₹0.66 | ✅ | ❌ |
+| **Groq Whisper turbo** | $0.04/**hour** | **₹0.06** | ❌ files only | ❌ needs code |
+
+Groq is by far the cheapest but cannot stream: using it on a live call means
+writing the audio chunking and silence detection yourself, which is most of
+what Deepgram is sold for.
+
+### Every speaking option compared ✅
+
+| Provider | Price | ₹/min at ~500 chars | Indian languages? |
+|---|---|---|---|
+| **Twilio standard** | $0.0008/100 chars | **₹0.35** | ✅ yes |
+| Deepgram Aura-1 | $0.015/1k chars | ₹0.66 | ❌ no Hindi |
+| Twilio neural | $0.0032/100 chars | ₹1.41 | ✅ |
+| Twilio Chirp3-HD | $0.0130/100 chars | ₹5.70 | ✅ best, all 7 |
+| ElevenLabs | credit-based | ~₹4–8 ⚠️ | ⚠️ not stated |
+
+**Conclusion: Twilio standard voice is the cheapest verified option that
+speaks Indian languages.** Deepgram's own voice is cheaper than Chirp3-HD but
+cannot speak Hindi, so it is not an option here.
 
 ### The AI brain
 - **Groq:** free tier, best for Indian languages
@@ -178,7 +209,11 @@ Be careful quoting these:
 - **Razorpay's transaction fee** — check your dashboard
 - **Twilio phone number monthly rental** — check Console → Phone Numbers
 - **Plivo's exact KYC document list** — their pages wouldn't load; ask support
-- **Groq Whisper speech-to-text pricing** — not published publicly
+- **Google Cloud speech prices** — both pricing pages block automated reading
+- **OpenAI API prices** — their public page shows only ChatGPT seat pricing
+- **Telnyx, Sinch, Vonage rates to India** — none publish one; Telnyx and
+  Sinch keep theirs in a downloadable price sheet, Vonage blocks the page
+- **ElevenLabs per-minute cost and Hindi support** — credit-based, not stated
 - **The ₹88 = $1 rate** — changes daily
 
 ---
