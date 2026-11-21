@@ -26,19 +26,55 @@
   </div>
 </div>
 
-{% if not twilio_connected or not groq_connected %}
-<div class="banner amber">
-  <div style="flex:1;min-width:260px">
-    <div style="font-weight:600;font-size:14px;color:var(--amber);margin-bottom:3px">
-      Finish setting up</div>
-    <div style="font-size:13px;color:var(--muted)">
-      {% if not twilio_connected %}Connect your Twilio account{% endif %}
-      {% if not twilio_connected and not groq_connected %} and {% endif %}
-      {% if not groq_connected %}choose an AI provider{% endif %}
-      to start placing calls.
-    </div>
+{# Until the first call is placed, say exactly what is still missing and why.
+   The old banner said "connect your Twilio account", which doesn't tell a
+   salon owner that they need to create one, add credit and buy a number -
+   the single place most signups stall. #}
+{% if not twilio_connected or not groq_connected or not stats.total %}
+<div class="card" style="border-color:rgba(255,176,32,.35)">
+  <div class="card-head">
+    <div class="card-title">Get your first call working</div>
+    <span class="mono">
+      {{ [twilio_connected, groq_connected, stats.total > 0]|select|list|length }} of 3 done
+    </span>
   </div>
-  <a href="/settings" class="btn btn-primary">Open settings</a>
+  <div class="card-body">
+    {% set steps = [
+      (twilio_connected,
+       "Connect a phone provider",
+       "Create a Twilio account, add credit (about $20), buy a number, then paste the
+        Account SID, Auth Token and number into Settings. Calls are billed by Twilio
+        directly to you.",
+       "/settings", "Open settings"),
+      (groq_connected,
+       "Choose the AI brain",
+       "A free key from console.groq.com is enough. Groq handles Hindi and Gujarati
+        well and costs nothing on its free tier.",
+       "/settings", "Open settings"),
+      (stats.total > 0,
+       "Place a test call to yourself",
+       "Hear the agent before any customer does. On a Twilio trial you can only call
+        numbers you have verified in the Twilio console.",
+       "/call", "Make a test call"),
+    ] %}
+    {% for done, title, why, link, label in steps %}
+    <div style="display:flex;gap:12px;align-items:flex-start;padding:12px 0;
+                {% if not loop.last %}border-bottom:1px solid var(--border-2){% endif %}">
+      <div style="font-size:18px;line-height:1.2;color:{{ 'var(--green)' if done else 'var(--hint)' }}">
+        {{ '✓' if done else loop.index }}
+      </div>
+      <div style="flex:1;min-width:220px">
+        <div style="font-size:13.5px;font-weight:600;
+                    color:{{ 'var(--hint)' if done else 'var(--text)' }}">{{ title }}</div>
+        {% if not done %}<div class="note" style="margin-top:3px">{{ why }}</div>{% endif %}
+      </div>
+      {% if not done %}
+      <a href="{{ link }}" class="btn btn-ghost" style="width:auto;margin:0;white-space:nowrap">
+        {{ label }}</a>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
 </div>
 {% endif %}
 

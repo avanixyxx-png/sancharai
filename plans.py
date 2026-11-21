@@ -34,7 +34,11 @@ PLANS: dict[str, dict] = {
         "max_agents": 1,
         "max_campaigns": 1,
         "max_contacts": 50,
-        "features": ["30 minutes/month", "1 AI agent", "1 campaign", "Browser demo"],
+        # No "Browser demo" here: the pricing page used to promise one and no
+        # such feature exists. Promising what you cannot deliver costs more
+        # trust than the line was ever worth.
+        "features": ["30 minutes/month", "1 AI agent", "1 campaign",
+                     "Connect your own Twilio"],
     },
     "starter": {
         "name": "Starter",
